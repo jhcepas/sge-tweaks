@@ -1,0 +1,166 @@
+#!/usr/bin/env python 
+import re
+import commands 
+import sys
+from string import strip
+from collections import defaultdict
+import time
+import datetime 
+
+mK = 1024
+mM = 1024*1024
+mG = 1024*1024*1024
+
+mk = 1000
+mm = 1000*1000
+mg = 1000*1000*1000
+
+DAY = 3600 * 24
+HOUR = 3600
+MINUTE = 60
+
+def tm2sec(tm):
+    try:
+        return time.mktime(time.strptime(tm))
+    except Exception: 
+        return 0.0
+
+def mem2bytes(mem):
+    try: 
+        bytes = float(mem)
+    except ValueError: 
+        mod = mem[-1]
+        mem = mem[:-1]
+        if mod == "K": 
+            bytes = float(mem) * mK
+        elif mod == "M":
+            bytes = float(mem) * mM
+        elif mod == "G":
+            bytes = float(mem) * mG
+        elif mod == "k": 
+            bytes =  float(mem) * mk
+        elif mod == "m":
+            bytes = float(mem) * mm
+        elif mod == "g":
+            bytes = float(mem) * mg
+
+    return bytes
+
+def bytes2mem(bytes):
+    if bytes > mG:
+        return "%0.2fG" %(float(bytes)/mG)
+    elif bytes > mM:
+        return "%0.2fM" %(float(bytes)/mM)
+    elif bytes > mK:
+        return "%0.2fK" %(float(bytes)/mK)
+    else:
+        return bytes
+
+def dictcount(d):
+    v2count = defaultdict(int)
+    for v in d.itervalues():
+        v2count[v] += 1
+    return '\n'.join(["% 13d  %s" %(k,c) for k,c in v2count.iteritems()])
+
+def sec2tm(sec):
+    return str(datetime.timedelta(seconds=sec))
+
+
+def get_summary(JOBID):
+    text = commands.getoutput("qacct -j %s" %JOBID)
+
+    hosts = set()
+    task2status = {}
+    task2duration = {}
+    task2cpu = {}
+    task2mem = {}
+    task2fail = {}
+
+    for task_block in re.findall("(qname.*?arid\s+[^\n]+)", text, re.DOTALL):
+        tinfo = {}
+        for line in task_block.split("\n"):
+            key, value = strip(line[0:12]), strip(line[12:])
+            try: 
+                value = float(value)
+            except ValueError: 
+                try: 
+                    value = int(value)
+                except ValueError:
+                    pass
+            tinfo[key]=value
+        hosts.add(tinfo["hostname"])
+        tid = tinfo["taskid"]
+        task2status[tid] = tinfo["exit_status"]
+        task2fail[tid] = tinfo["failed"]
+        task2duration[tid] = tm2sec(tinfo["end_time"]) - tm2sec(tinfo["start_time"])
+        task2mem[tid] = mem2bytes(tinfo["maxvmem"])
+        task2cpu[tid] = tinfo["cpu"]
+
+    summary = ''
+    if task2mem:
+        summary +=  "Max mem usage:    " + bytes2mem(max(task2mem.values())) + "\n"
+        summary +=  "Aveg mem usage:   " + bytes2mem(sum(task2mem.values()) / float(len(task2mem))) +"\n"
+        summary +=  "Max job duration: " + sec2tm(max(task2duration.values())) + "\n"
+        summary +=  "AVg job duration: " + sec2tm(sum(task2duration.values()) / float(len(task2duration))) +"\n"
+        summary += '\n'
+        summary +=  " EXIT STATUS     COUNT \n" 
+        summary +=  "=============  ========\n"
+        summary += dictcount(task2status) + "\n\n"
+        summary += 'You can get more info by running "qacct -j %s"\n' %JOBID
+    return summary
+
+if __name__ == "__main__":
+    if len(sys.argv)<2:
+        print >>sys.stderr, "You need to provide a jobid (i.e qsummary 105)."
+        exit(1)
+    else:
+        JOBID = sys.argv[1]
+    print get_summary(JOBID)
+
+
+
+"""
+
+qname        t99999_m128_c64.q   
+hostname     trantor4.crg.es     
+group        nogroup             
+owner        jhuerta             
+project      NONE                
+department   defaultdepartment   
+jobname      test_job.sh         
+jobnumber    175                 
+taskid       1442                
+account      sge                 
+priority     0                   
+qsub_time    Wed Apr  4 18:20:44 2012
+start_time   Wed Apr  4 18:28:00 2012
+end_time     Wed Apr  4 18:28:41 2012
+granted_pe   NONE                
+slots        1                   
+failed       100 : assumedly after job
+exit_status  137                 
+ru_wallclock 41           
+ru_utime     0.004        
+ru_stime     0.012        
+ru_maxrss    1636                
+ru_ixrss     0                   
+ru_ismrss    0                   
+ru_idrss     0                   
+ru_isrss     0                   
+ru_minflt    1245                
+ru_majflt    0                   
+ru_nswap     0                   
+ru_inblock   0                   
+ru_oublock   16                  
+ru_msgsnd    0                   
+ru_msgrcv    0                   
+ru_nsignals  0                   
+ru_nvcsw     19                  
+ru_nivcsw    3                   
+cpu          7.460        
+mem          0.044             
+io           0.000             
+iow          0.000             
+maxvmem      30.965M
+arid         undefi
+"""

@@ -1,0 +1,124 @@
+#!/usr/bin/env python
+
+##
+## This simple daemon keeps the count of how many array jobs has been
+## finished. The epilog script can check this number when a job
+## finishes to know if it is the last to fininsh and then send an
+## email.
+##
+## First, I tried using a jobid file or sqlite database, but I found
+## them to fail due to race conditions, file locking, etc.
+##
+
+import daemon
+import sys
+import socket
+import commands 
+import logging 
+
+MAXJOBS = 1000000 # To avoid overflow
+LOGFILE = '/sge/cgenomics/common/qarrayd.log'
+PIDFILE = '/sge/cgenomics/common/qarrayd.PID'
+LOGLEVEL = logging.DEBUG
+
+HOST = 'qmaster'
+PORT = 6446
+backlog = 5
+
+job2counter = {}
+job2totals = {}
+
+
+def update_totals(log):
+    log.info("Updating totals...")
+    global job2counter, job2total
+    output = commands.getoutput('qstat -u ,* -g d|tail -n+3|awk {\'print $1\'}|sort |uniq -c')
+    for line in output.split("\n"):
+        try: 
+            counter, jobid = map(int, line.split())
+        except:
+            log.error("ERR: skipping totals line %s", line)
+        else:
+            job2totals[jobid] = counter
+            job2counter[jobid] = 0
+            log.info("INIT %s %s", jobid, counter)
+
+class QArrayd(daemon.Daemon):
+    def run(self):
+        log = logging.getLogger('qarrayq')
+        hdlr = logging.FileHandler(LOGFILE)
+        log.addHandler(hdlr)
+        log.setLevel(LOGLEVEL)
+
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind((HOST, PORT))
+            s.listen(backlog)
+            update_totals(log)
+            while 1:
+                client, address = s.accept()
+                jobid = client.recv(16)
+                if len(job2counter)<=MAXJOBS:
+                    try:
+                        jobid = int(jobid)
+                    except ValueError:
+                        if jobid.startswith("set"):
+                            try:
+                                jid, value = map(int, jobid[3:].split("to"))
+                            except: 
+                                log.error("Unknown command %s", jobid)
+                            else: 
+                                log.info("SET %s to %s", jid, value)
+                                job2counter[jid] = value
+                                client.send("OK")
+                                client.close() 
+                        elif jobid.startswith("log"):
+                            try:
+                                log.setLevel(int(jobid[3:]))
+                            except: 
+                                log.error("Unknown command %s", jobid)
+                            else: 
+                                log.info("SET new log level")
+                                client.send("OK")
+                                client.close() 
+                        else:
+                            log.error("Unknown command %s", jobid)
+                            
+                    else:
+                        if jobid not in job2totals:
+                            update_totals(log)
+                        if jobid in job2counter: 
+                            job2counter[jobid] += 1
+                            info = "%s|%s" %(job2counter[jobid], job2totals[jobid])
+                            client.send(info)
+                            client.close() 
+                            log.debug("Sent %s to job %s", info, jobid)
+                        else:
+                            log.error("Job not accepted")
+                            client.send("job not known")
+                            client.close()
+        except: 
+            log.error("Adios adios")
+            s.close()
+            raise
+
+
+if __name__ == "__main__":
+    daemon = QArrayd(PIDFILE)
+    if len(sys.argv) == 2:
+        if 'start' == sys.argv[1]:
+            daemon.start()
+        elif 'stop' == sys.argv[1]:
+            daemon.stop()
+        elif 'restart' == sys.argv[1]:
+            daemon.restart()
+        elif 'debug' == sys.argv[1]:
+            daemon.run()
+        else:
+            print "Unknown command"
+            sys.exit(2)
+        sys.exit(0)
+    else:
+        print "usage: %s start|stop|restart" % sys.argv[0]
+        sys.exit(2)
