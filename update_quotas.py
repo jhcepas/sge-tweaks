@@ -19,8 +19,10 @@ if sys.argv[-1] not in set(["create", "modify", "dryrun"]):
                                           time or if TIMES keys or
                                           HGROUPS are changed in the script.)
     
-     "modify" = only modify quotas (can be done on the fly)
+     "modify" = modify existing queues and quotas (can be done on the fly)
 
+     "quotas" = only modifies quotas
+    
      "dryrun" = prints the commands, but not execute
 
     """
@@ -126,7 +128,7 @@ while 1:
             print "qconf -Arqs newquotas.tmp"
             break
         elif raw_input("\nModify quotas as shown above? [yes,  Ctr-C to cancel]: ").strip() == "yes":
-            if SCRIPT_MODE == "modify":
+            if SCRIPT_MODE in set(["modify", "quotas"]):
                 os.system("qconf -Mrqs newquotas.tmp")
             elif SCRIPT_MODE == "create":
                 os.system("qconf -drqs maxslots")
