@@ -1,0 +1,6 @@
+{
+   name         maxslots
+   description  NONE
+   enabled      TRUE
+   LIMITS!
+}
