@@ -6,6 +6,10 @@ import re
 import tempfile
 import socket
 
+MODPATH = os.path.realpath(os.path.split(__file__)[0])
+USERMAIL_FILE = os.path.join(MODPATH,"user2mail")
+DEFAULT_MAIL = "cgenomics+error@gmail.com"
+
 try:
     jobid = sys.argv[1]
 except IndexError: 
@@ -60,29 +64,10 @@ if sendmail:
     m = re.search("owner:\s(.+)", jobinfo, re.MULTILINE)
     if m:
         owner = m.groups()[0].strip()
-        if m: print >>sys.stderr, "SGE: job owner", owner
-        if owner == "root": 
-            email = "jhcepas@gmail.com"
-        if owner =="jhuerta": 
-            email = "jhcepas@gmail.com"
-        elif owner =="scapella": 
-            email = "salcagu@gmail.com"
-        elif owner =="ddevienne": 
-            email = "damien2vienne@gmail.com"
-        elif owner =="apittis": 
-            email = "alexandros.pittis@gmail.com"
-        elif owner == "mmarcet":
-            email = "mmarcet@crg.es"
-        elif owner == "tgabaldon":
-            email = "tgabaldon@crg.es"
-        elif owner == "lpryszcz":
-            email = "l.p.pryszcz@gmail.com"
-        elif owner == "gaguileta":
-            email = "gabriela.aguileta@crg.es"
-        else:
-            email = "jhcepas@gmail.com"
+        user2mail = dict([ map(strip, line.strip()) for l in  open(USERMAIL_FILE)])
+        email = user2mail.get(owner, DEFAULT_EMAIL)
     else:
-        email = "cgenomics+errors@gmail.com"
+        email = DEFAULT_EMAIL
 
 
     F = tempfile.NamedTemporaryFile()

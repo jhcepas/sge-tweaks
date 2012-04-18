@@ -47,4 +47,4 @@ h_core                INFINITY
 s_rss                 INFINITY
 h_rss                 INFINITY
 s_vmem                INFINITY
-h_vmem                INFINITY
+h_vmem                MEM!

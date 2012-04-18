@@ -93,6 +93,7 @@ for tm in sorted(TIMES):
         temp = temp.replace("QNAME!", qname)
         temp = temp.replace("HOSTS!", host)
         temp = temp.replace("SLOTS!", str(slots))
+        temp = temp.replace("MEM!", str(mem)+"g")
         temp = temp.replace("SEQNUM!", str(seq))
         seq += 1
         print "CREATING", qname
