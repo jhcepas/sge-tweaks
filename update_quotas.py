@@ -8,7 +8,7 @@ import sys
 import os
 import math
 
-if sys.argv[-1] not in set(["create", "modify", "dryrun"]):
+if sys.argv[-1] not in set(["create", "modify", "dryrun", "quotas"]):
     print """
     Please, read the comments within the script if you have not done
     it yet.
@@ -110,7 +110,8 @@ for tm in sorted(TIMES):
             print "qconf -Aq newqueue.tmp"
             
         maxslots = int(round(quota*nnodes*slots))
-        limits.append("limit\tqueues {%s}\tto slots=%s" % (qname, maxslots))
+        #limit        users {*} hosts {@allhosts} to slots=180
+        limits.append("limit\tqueues {%s} hosts {@allhosts} to slots=%s" % (qname, maxslots))
         tm_maxslots += maxslots 
     tm2slots[tm] = tm_maxslots
 
