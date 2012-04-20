@@ -192,7 +192,7 @@ for x in running_jobs[2:]:
             if line.startswith("hard resource_list:"):
                 rt_match = re.search("h_rt=(\d+)", line)
                 mem_match = re.search(H_VMEMMATCH, line)
-                if rt_match:
+                if mem_match:
                     job2vmem[jid] = mem2bytes(mem_match.groups()[0])
 
             elif usage_match:
