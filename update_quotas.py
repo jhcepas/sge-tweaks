@@ -111,7 +111,7 @@ for tm in sorted(TIMES):
             
         maxslots = int(round(quota*nnodes*slots))
         #limit        users {*} hosts {@allhosts} to slots=180
-        limits.append("limit\tqueues {%s} hosts {@allhosts} to slots=%s" % (qname, maxslots))
+        limits.append("limit\tqueues {%s} to slots=%s" % (qname, maxslots))
         tm_maxslots += maxslots 
     tm2slots[tm] = tm_maxslots
 
@@ -131,6 +131,7 @@ while 1:
             break
         elif raw_input("\nModify quotas as shown above? [yes,  Ctr-C to cancel]: ").strip() == "yes":
             if SCRIPT_MODE in set(["modify", "quotas"]):
+                print "Modifying current quotas"
                 os.system("qconf -Mrqs newquotas.tmp")
             elif SCRIPT_MODE == "create":
                 os.system("qconf -drqs maxslots")
