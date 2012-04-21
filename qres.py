@@ -32,17 +32,24 @@ def get_hosts_in_queues(queues):
     all_hosts = set()
     for q in queues:
         qinfo = commands.getoutput('qconf -sq %s' %q)
-        qinfo = qinfo.replace("\\", " ")
+        qinfo = qinfo.replace("\\\n", " ")
         match = re.search("hostlist\s(.+)", qinfo, re.MULTILINE)
         if match:
             for host in [h.strip() for h in match.groups()[0].split()]:
                 if host.startswith("@"):
                     hginfo = commands.getoutput('qconf -shgrp %s' %host)
-                    hginfo = hginfo.replace("\\", " ")
+                    hginfo = hginfo.replace("\\\n", " ")
                     match = re.search("hostlist\s(.+)", hginfo, re.MULTILINE)
                     all_hosts.update([h.strip() for h in match.groups()[0].split()])
                 else:
                     all_hosts.update([host])
+
+    # update to keep just the hostname without domain
+    for host in all_hosts:
+        hostname = host.split('.')[0]
+        all_hosts.remove(host)
+        all_hosts.add(hostname)
+
     return all_hosts 
 
 def print_as_table(rows, header=None, fields=None, print_header=True, stdout=sys.stdout):
@@ -202,7 +209,11 @@ if mem_consumable_type == "YES":
 
 # I had to use shorter host names (without domain), because they were truncated in qstat output
 # hosts = map(strip, commands.getoutput("qconf -sel").split("\n"))
-hosts = map(strip, commands.getoutput('qconf -sel|cut -f1 -d"."').split("\n"))
+
+if options.queue:
+    hosts = map(strip, get_hosts_in_queues([options.queue]))
+else:
+    hosts = map(strip, commands.getoutput('qconf -sel|cut -f1 -d"."').split("\n"))
 
 ## detect consumables of each host
 host2avail_mem = {}
