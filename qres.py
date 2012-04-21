@@ -26,6 +26,23 @@ DAY = 3600 * 24
 HOUR = 3600
 MINUTE = 60
 
+def get_hosts_in_queues(queues):
+    all_hosts = set()
+    for q in queues:
+        qinfo = commands.getoutput('qconf -sq %s' %q)
+        qinfo = qinfo.replace("\\", " ")
+        match = re.search("hostlist\s(.+)", qinfo, re.MULTILINE)
+        if match:
+            for host in [h.strip() for h in match.groups()[0].split()]:
+                if host.startswith("@"):
+                    hginfo = commands.getoutput('qconf -shgrp %s' %host)
+                    hginfo = hginfo.replace("\\", " ")
+                    match = re.search("hostlist\s(.+)", hginfo, re.MULTILINE)
+                    all_hosts.update([h.strip() for h in match.groups()[0].split()])
+                else:
+                    all_hosts.update([host])
+    return all_hosts 
+
 def print_as_table(rows, header=None, fields=None, print_header=True, stdout=sys.stdout):
     """ Print >>Stdout, a list matrix as a formated table. row must be a list of
     dicts or lists."""
