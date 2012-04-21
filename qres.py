@@ -50,7 +50,13 @@ def get_hosts_in_queues(queues):
         all_hosts.remove(host)
         all_hosts.add(hostname)
 
-    return all_hosts 
+    # convert to list to show nodes sorted
+    all_hosts_list = []
+    for host in all_hosts:
+        all_hosts_list.append(host)
+        all_hosts_list.sort()
+
+    return all_hosts_list
 
 def print_as_table(rows, header=None, fields=None, print_header=True, stdout=sys.stdout):
     """ Print >>Stdout, a list matrix as a formated table. row must be a list of
