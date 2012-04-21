@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 import commands
 import sys
+import os
+import argparse
 from string import strip
 from collections import defaultdict 
 import re
@@ -136,9 +138,42 @@ def bytes2mem(bytes):
         return bytes
 
 
+def get_options():
+    '''
+    parse option from command line call
+    '''
+    parser = argparse.ArgumentParser(description='Show your cluster usage')
+
+    parser.add_argument('-u', dest='user', default='\'*\'', help='query\
+    just this user')
+
+    parser.add_argument('-q', dest='queue', help='query \
+            just this queue')
+
+
+    options = parser.parse_args()
+
+    # check if user exists
+    if options.user != '\'*\'':
+        if (os.system('id ' + options.user + ' > /dev/null')) != 0:
+            #parser.print_help()
+            sys.exit()
+
+    # check if queue exists
+    if options.queue:
+        if (os.system('qconf -sq ' + options.queue + ' > /dev/null')) != 0:
+            sys.exit()
+    
+
+    return options
+
+
+
 ## 
 ## Main program starts here
 ##
+
+options = get_options()
         
 ## Detect type of mem consumable
 PER_SLOT_MEM=False
@@ -165,7 +200,12 @@ for h in hosts:
         host2avail_slots[h] = int(slots_match.groups()[0])
 
 ## Detect running jobs
-running_jobs = map(strip, commands.getoutput('qstat -s r -u \'*\'').split("\n"))
+if options.queue:
+    running_jobs = map(strip, commands.getoutput('qstat -s r -u ' +\
+        options.user + ' -q ' + options.queue).split("\n"))
+else:
+    running_jobs = map(strip, commands.getoutput('qstat -s r -u ' +\
+            options.user).split("\n"))
 
 ## Load info about running jobs
 host2slots = defaultdict(int)
