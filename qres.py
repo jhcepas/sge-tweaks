@@ -366,7 +366,7 @@ for x in hosts:
 if options.user != '\'*\'':
     description =  "\n" + bcolors.HEADER + "User " + options.user + bcolors.ENDC + "\n"
     if options.queue:
-        desk =  "\n" + bcolors.HEADER + "User " + options.user +\
+        description =  "\n" + bcolors.HEADER + "User " + options.user +\
         " in queue " + options.queue + bcolors.ENDC + "\n"
 else:
     if options.queue:
