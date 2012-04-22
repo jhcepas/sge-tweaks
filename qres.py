@@ -16,7 +16,7 @@ H_VMEMMATCH_m = re.compile("h_vmem=(\d+(\.\d+)?\w?)", re.MULTILINE)
 
 def color(color, string):
     color2code = {
-        "header": '\033[95m',
+        "pink": '\033[95m',
         "blue": '\033[94m',
         "green": '\033[92m',
         "yellow": '\033[93m',
@@ -27,22 +27,6 @@ def color(color, string):
     }
     END = '\033[0m'
     return ''.join([color2code[color], string, END])
-
-class bcolors:
-    HEADER = '\033[95m'
-    BLUE = '\033[94m'
-    GREEN = '\033[92m'
-    YELLOW = '\033[93m'
-    RED = '\033[91m'
-    ENDC = '\033[0m'
-
-    def disable(self):
-        self.HEADER = ''
-        self.BLUE = ''
-        self.GREEN = ''
-        self.YELLOW = ''
-        self.RED = ''
-        self.ENDC = ''
 
 # 
 # Here some utils taken from my scripts
@@ -399,20 +383,16 @@ for x in hosts:
 # add a description (with colors) before the output with information about
 # what is being printed to stdout
 if options.user != '\'*\'':
-    description =  "\n" + bcolors.HEADER + "User " + options.user + bcolors.ENDC + "\n"
+    description = color("pink", "\n User " + options.user + "\n")
     if options.queue:
-        description =  "\n" + bcolors.HEADER + "User " + options.user +\
-        " in queue " + options.queue + bcolors.ENDC + "\n"
+        description = color("pink", "\n User " + options.user + " in queue " + options.queue + "\n")
 else:
     if options.queue:
-        description =  "\n" + bcolors.HEADER + "Jobs in queue " + options.queue +\
-        bcolors.ENDC + "\n"
-    else: description =  "\n" + bcolors.HEADER + "CLUSTER STATS " + bcolors.ENDC + "\n"
+        description =  color("pink","\n Jobs in queue " + options.queue + "\n")
+    else: description =  color("pink","\n CLUSTER STATS \n")
 
 print description    
 header = "Host", "S.used", "S.tot.", "M.res.", "M.used","M.tot.", "Mem graph", "Slots graph" 
-#header = bcolors.HEADER + "Host", "S.used", "S.tot.", "M.res.", "M.used","M.tot.", "Mem graph", "Slots graph" + bcolors.ENDC
-
 
 print_as_table(entries, header=header)
 
