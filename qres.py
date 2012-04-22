@@ -14,6 +14,20 @@ H_VMEMMATCH = re.compile("h_vmem=(\d+(\.\d+)?\w?)")
 H_VMEMMATCH_m = re.compile("h_vmem=(\d+(\.\d+)?\w?)", re.MULTILINE)
 
 
+def color(color, string):
+    color2code = {
+        "header": '\033[95m',
+        "blue": '\033[94m',
+        "green": '\033[92m',
+        "yellow": '\033[93m',
+        "red": '\033[91m',
+        "magenta": "\033[35m",
+        "white": "\033[37m",
+
+    }
+    END = '\033[0m'
+    return ''.join([color2code[color], string, END])
+
 class bcolors:
     HEADER = '\033[95m'
     BLUE = '\033[94m'
@@ -94,6 +108,12 @@ def print_as_table(rows, header=None, fields=None, print_header=True, stdout=sys
         else:
             return str(i)
 
+    def _safe_len(i):
+        return len(re.sub('\\033\[\d+m', '',  _str(i)))
+
+    def _safe_rjust(s, just):
+        return (" " * (just - _safe_len(s))) + s
+        
     vtype = None
     for v in rows:
         if vtype != None and type(v)!=vtype:
@@ -115,8 +135,9 @@ def print_as_table(rows, header=None, fields=None, print_header=True, stdout=sys
         for i,iv in enumerate(fields):
             header_length = 0
             if header != []:
-                header_length = len(_str(header[i]))
-            max_field_length = max( [ len(_str(r[iv])) for r in rows] )
+                #header_length = len(_str(header[i]))
+                header_length = _safe_len(header[i])
+            max_field_length = max( [_safe_len(r[iv]) for r in rows] )
             lengths[i] = max( [ header_length, max_field_length ] )
 
         if header and print_header:
@@ -131,7 +152,8 @@ def print_as_table(rows, header=None, fields=None, print_header=True, stdout=sys
         # Print >>Stdout, table lines
         for r in rows:
             for i,iv in enumerate(fields):
-                print >>stdout, _str(r[iv]).rjust(lengths[i])+" | ",
+                #print >>stdout, _str(r[iv]).rjust(lengths[i])+" | ",
+                print >>stdout, _safe_rjust(_str(r[iv]), lengths[i])+" | ",
             print >>stdout, ""
 
     elif vtype == dict:
@@ -189,7 +211,7 @@ def bytes2mem(bytes):
     elif bytes > mK:
         return "%0.2fK" %(float(bytes)/mK)
     else:
-        return bytes
+        return str(bytes)
 
 
 def get_options():
@@ -341,24 +363,37 @@ for x in running_jobs[2:]:
 ## show collected info
         
 entries = []
+
 for x in hosts:
-    mem_factor_used = (host2usedmem.get(x, 0) * MEM_STRING_LEN) / host2avail_mem[x]
-    mem_factor_unused = (host2vmem.get(x, 0) * MEM_STRING_LEN) / host2avail_mem[x]
+    mem_used = host2usedmem.get(x, 0)
+    mem_reserved = host2vmem.get(x, 0)
+    mem_avail = host2avail_mem[x]
+
+    mem_factor_used = (mem_used * MEM_STRING_LEN) / mem_avail
+    mem_factor_unused = (mem_reserved * MEM_STRING_LEN) / mem_avail
     mem_factor_unused -= mem_factor_used
 
     mem_char_used = int(round(mem_factor_used))
     mem_char_unused = int(round(mem_factor_unused))
     mem_char_free = MEM_STRING_LEN- mem_char_used - mem_char_unused
-        
+
+    if mem_used > 0.75 * mem_reserved:
+        USED_MEM_COL = "red"
+    elif mem_used > 0.5 * mem_reserved:
+        USED_MEM_COL = "magenta"
+    else:
+        USED_MEM_COL = "white"
+    
     fields = [x.ljust(8), host2slots.get(x, 0), host2avail_slots[x],
-              bytes2mem(host2vmem.get(x, 0)),
-              bytes2mem(host2usedmem.get(x, 0)),
-              bytes2mem(host2avail_mem[x]),
-              "#" * mem_char_used +
-              "~" * mem_char_unused +
-              " " * mem_char_free, 
-              "#"*host2slots.get(x, 0) + ("." * (host2avail_slots[x] - host2slots.get(x, 0))),
-    ]
+              color(USED_MEM_COL, bytes2mem(mem_reserved)),
+              color(USED_MEM_COL, bytes2mem(mem_used)),
+              color("blue", bytes2mem(mem_avail)),
+              color("red", "#" * mem_char_used) +
+              color("magenta", "~" * mem_char_unused) +
+              color("white", " " * mem_char_free), 
+              color("red", "#"*host2slots.get(x, 0)) +
+              ("." * (host2avail_slots[x] - host2slots.get(x, 0)))
+          ]
     entries.append(fields)
 
 # add a description (with colors) before the output with information about
