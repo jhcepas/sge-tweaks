@@ -286,8 +286,16 @@ host2avail_mem = {}
 host2avail_slots = {}
 for h in hosts:
     hinfo = commands.getoutput("qconf -se %s" %h)
-    mem_match = re.search(H_VMEMMATCH_m, hinfo)
-    slots_match = re.search("[\s,]?slots=(\d+)", hinfo, re.MULTILINE)
+    if re.search(H_VMEMMATCH_m, hinfo):
+        mem_match = re.search(H_VMEMMATCH_m, hinfo)
+    else:
+        print 'not found h_vmem consumable resource in exec nodes'
+        sys.exit()
+    if  re.search("[\s,]?slots=(\d+)", hinfo, re.MULTILINE):
+        slots_match = re.search("[\s,]?slots=(\d+)", hinfo, re.MULTILINE)
+    else:
+        print 'not found slot consumable resource in exec nodes'
+        sys.exit()
     if mem_match:
         host2avail_mem[h] = mem2bytes(mem_match.groups()[0])
     if mem_match:
