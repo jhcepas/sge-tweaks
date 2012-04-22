@@ -54,9 +54,16 @@ def get_hosts_in_queues(queues):
     all_hosts_list = []
     for host in all_hosts:
         all_hosts_list.append(host)
-        all_hosts_list.sort()
 
-    return all_hosts_list
+    return list(set(all_hosts_list))
+
+def get_hosts_for_user(user):
+
+    hosts = map(strip, commands.getoutput('qstat -s r -u ' + user + ' | grep -v job-ID |grep -v\
+    \'\-\-\'|awk {\'print $8\'}|awk -F \"@\" {\'print $2\'} |awk -F \'.\'\
+    {\'print $1\'}').split("\n"))
+    
+    return list(set(hosts))
 
 def print_as_table(rows, header=None, fields=None, print_header=True, stdout=sys.stdout):
     """ Print >>Stdout, a list matrix as a formated table. row must be a list of
@@ -216,10 +223,37 @@ if mem_consumable_type == "YES":
 # I had to use shorter host names (without domain), because they were truncated in qstat output
 # hosts = map(strip, commands.getoutput("qconf -sel").split("\n"))
 
-if options.queue:
-    hosts = map(strip, get_hosts_in_queues([options.queue]))
+# is user arg is passed only take the node where that
+# user is running jobs
+if options.user != '\'*\'':
+    hosts = get_hosts_for_user(options.user)
+    # if both user and queue args are passed...
+    if options.queue:
+        hostsInQueue = map(strip, get_hosts_in_queues([options.queue]))
+        toRemove = []
+        for x in hosts:
+            if x not in hostsInQueue:
+                toRemove.append(x)
+        for x in toRemove:
+            hosts.remove(x)
+    hosts.sort()
 else:
-    hosts = map(strip, commands.getoutput('qconf -sel|cut -f1 -d"."').split("\n"))
+    # if just queue arg is passed...
+    if options.queue:
+        hosts = map(strip, get_hosts_in_queues([options.queue]))
+        hosts.sort()
+    # if no arg is passed take all exec nodes
+    else:
+        hosts = map(strip, commands.getoutput('qconf -sel|cut -f1 -d"."').split("\n"))
+        hosts.sort()
+
+## Detect running jobs
+if options.queue:
+    running_jobs = map(strip, commands.getoutput('qstat -s r -u ' +\
+        options.user + ' -q ' + options.queue).split("\n"))
+else:
+    running_jobs = map(strip, commands.getoutput('qstat -s r -u ' +\
+            options.user).split("\n"))
 
 ## detect consumables of each host
 host2avail_mem = {}
@@ -233,13 +267,6 @@ for h in hosts:
     if mem_match:
         host2avail_slots[h] = int(slots_match.groups()[0])
 
-## Detect running jobs
-if options.queue:
-    running_jobs = map(strip, commands.getoutput('qstat -s r -u ' +\
-        options.user + ' -q ' + options.queue).split("\n"))
-else:
-    running_jobs = map(strip, commands.getoutput('qstat -s r -u ' +\
-            options.user).split("\n"))
 
 ## Load info about running jobs
 host2slots = defaultdict(int)
