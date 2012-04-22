@@ -209,8 +209,11 @@ def get_options():
 
     # check if user exists
     if options.user != '\'*\'':
-        if (os.system('id ' + options.user + ' > /dev/null')) != 0:
-            #parser.print_help()
+        userList = set()
+        for user in commands.getoutput('qconf -suserl').split("\n"):
+            userList.add(user)
+        if options.user not in userList:
+            print 'user ' + options.user + ' not found'
             sys.exit()
 
     # check if queue exists
@@ -358,10 +361,12 @@ for x in hosts:
     ]
     entries.append(fields)
 
+# add a description (with colors) before the output with information about
+# what is being printed to stdout
 if options.user != '\'*\'':
-    description =  "\n" + bcolors.HEADER + "Jobs for user " + options.user + bcolors.ENDC + "\n"
+    description =  "\n" + bcolors.HEADER + "User " + options.user + bcolors.ENDC + "\n"
     if options.queue:
-        desk =  "\n" + bcolors.HEADER + "Jobs for user " + options.user +\
+        desk =  "\n" + bcolors.HEADER + "User " + options.user +\
         " in queue " + options.queue + bcolors.ENDC + "\n"
 else:
     if options.queue:
