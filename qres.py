@@ -13,6 +13,23 @@ VMEMMATCH = re.compile("vmem=(\d+(\.\d+)?\w?)")
 H_VMEMMATCH = re.compile("h_vmem=(\d+(\.\d+)?\w?)")
 H_VMEMMATCH_m = re.compile("h_vmem=(\d+(\.\d+)?\w?)", re.MULTILINE)
 
+
+class bcolors:
+    HEADER = '\033[95m'
+    BLUE = '\033[94m'
+    GREEN = '\033[92m'
+    YELLOW = '\033[93m'
+    RED = '\033[91m'
+    ENDC = '\033[0m'
+
+    def disable(self):
+        self.HEADER = ''
+        self.BLUE = ''
+        self.GREEN = ''
+        self.YELLOW = ''
+        self.RED = ''
+        self.ENDC = ''
+
 # 
 # Here some utils taken from my scripts
 #
@@ -340,8 +357,22 @@ for x in hosts:
               "#"*host2slots.get(x, 0) + ("." * (host2avail_slots[x] - host2slots.get(x, 0))),
     ]
     entries.append(fields)
-    
-header = "Host", "S.used", "S.tot.", "M.res.", "M.used", "M.tot.", "Mem graph", "Slots graph"
+
+if options.user != '\'*\'':
+    description =  "\n" + bcolors.HEADER + "Jobs for user " + options.user + bcolors.ENDC + "\n"
+    if options.queue:
+        desk =  "\n" + bcolors.HEADER + "Jobs for user " + options.user +\
+        " in queue " + options.queue + bcolors.ENDC + "\n"
+else:
+    if options.queue:
+        description =  "\n" + bcolors.HEADER + "Jobs in queue " + options.queue +\
+        bcolors.ENDC + "\n"
+    else: description =  "\n" + bcolors.HEADER + "CLUSTER STATS " + bcolors.ENDC + "\n"
+
+print description    
+header = "Host", "S.used", "S.tot.", "M.res.", "M.used","M.tot.", "Mem graph", "Slots graph" 
+#header = bcolors.HEADER + "Host", "S.used", "S.tot.", "M.res.", "M.used","M.tot.", "Mem graph", "Slots graph" + bcolors.ENDC
+
 
 print_as_table(entries, header=header)
 
