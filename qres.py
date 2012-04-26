@@ -12,7 +12,7 @@ MAXVMEMMATCH = re.compile("maxvmem=(\d+(\.\d+)?\w?)")
 VMEMMATCH = re.compile("vmem=(\d+(\.\d+)?\w?)")
 H_VMEMMATCH = re.compile("h_vmem=(\d+(\.\d+)?\w?)")
 H_VMEMMATCH_m = re.compile("h_vmem=(\d+(\.\d+)?\w?)", re.MULTILINE)
-
+DEFAULT_RESERVED_MEM = (1024**3) * 2 
 
 def color(color, string):
     color2code = {
@@ -337,6 +337,8 @@ for x in running_jobs[2:]:
                 mem_match = re.search(H_VMEMMATCH, line)
                 if mem_match:
                     job2vmem[jid] = mem2bytes(mem_match.groups()[0])
+                else:
+                    job2vmem[jid] = DEFAULT_RESERVED_MEM
 
             elif usage_match:
                 taskinfo = {}
@@ -354,10 +356,11 @@ for x in running_jobs[2:]:
     ho = queue.split("@")[1].split(".")[0]
     host2usedmem[ho] += job_task2info.get((jid, task), {}).get("vmem", 0)
     host2slots[ho]+= slots
+    jmem = job2vmem[jid]
     if PER_SLOT_MEM:
-        host2vmem[ho] += (job2vmem[jid] * slots)
+        host2vmem[ho] += (jmem * slots)
     else:
-        host2vmem[ho] += job2vmem[jid]
+        host2vmem[ho] += jmem
 
 
 ## show collected info
