@@ -66,4 +66,4 @@
 
 # Automatic reservation
 -R y
--l 'h_rt=99999:00:00'
+-l 'h_rt=99999:00:00,h_vmem=2G'
