@@ -101,7 +101,7 @@ jsv_on_verify()
       if [ "`jsv_get_param pe_name`" = "" ]; then
 
          # -------------------------------------------
-         # in case no parallel environment was chosen add a default
+         # in case no parallel environment was chosen, add a default
          # request of one processor core AND add the job the default
          # pe
          # -------------------------------------------
@@ -125,14 +125,15 @@ jsv_on_verify()
          # --------------------------------------------
          
          # max amount of requested slots (mytestpe)
-         # max_slots=`jsv_get_param pe_max`
+         max_slots=`jsv_get_param pe_max`
          # if allocation rule is $pe_slots --> use max_slots for amount
-         jsv_set_param binding_amount "1"
+         #jsv_set_param binding_amount "1"
+         jsv_set_param binding_amount $max_slots
 
          jsv_set_param binding_type "set"
          jsv_set_param binding_strategy "linear_automatic"
  
-         jsv_correct "Job was modified by JSV"
+         jsv_correct "Job was modified by JSV !!"
          return
 
        else
