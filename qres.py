@@ -289,7 +289,7 @@ for h in hosts:
     if re.search(H_VMEMMATCH_m, hinfo):
         mem_match = re.search(H_VMEMMATCH_m, hinfo)
     else:
-        print 'not found h_vmem consumable resource in exec nodes'
+        print 'not found h_vmem consumable resource in ' + h
         sys.exit()
     if  re.search("[\s,]?slots=(\d+)", hinfo, re.MULTILINE):
         slots_match = re.search("[\s,]?slots=(\d+)", hinfo, re.MULTILINE)
