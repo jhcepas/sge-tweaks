@@ -219,7 +219,7 @@ def get_options():
         for user in commands.getoutput('qconf -suserl').split("\n"):
             userList.add(user)
         if options.user not in userList:
-            print 'user ' + options.user + ' not found'
+            print 'user ' + options.user + ' not found or has no jobs running'
             sys.exit()
 
     # check if queue exists
@@ -347,9 +347,15 @@ for x in running_jobs[2:]:
     host2usedmem[ho] += job_task2info.get((jid, task), {}).get("vmem", 0)
     host2slots[ho]+= slots
     if PER_SLOT_MEM:
-        host2vmem[ho] += (job2vmem[jid] * slots)
+        try:
+            host2vmem[ho] += (job2vmem[jid] * slots)
+        except KeyError:
+            print 'h_vmem reservation not found in job with uid %s' % sys.exc_value
     else:
-        host2vmem[ho] += job2vmem[jid]
+        try:
+            host2vmem[ho] += job2vmem[jid]
+        except KeyError:
+            print 'h_vmem reservation not found in job with uid %s' % sys.exc_value
 
 
 ## show collected info
