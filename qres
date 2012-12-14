@@ -201,7 +201,7 @@ def mem2bytes(mem):
         elif mod == "g":
             bytes = float(mem) * mg
 
-    return str(bytes)
+    return bytes
 
 def bytes2mem(bytes):
     if bytes > mG:
