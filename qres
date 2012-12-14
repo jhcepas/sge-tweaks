@@ -416,10 +416,33 @@ print description
 header = "Host", "S.used", "S.tot.", "M.res.", "M.used","M.tot.", "Mem graph", "Slots graph" 
 #header = bcolors.HEADER + "Host", "S.used", "S.tot.", "M.res.", "M.used","M.tot.", "Mem graph", "Slots graph" + bcolors.ENDC
 
-
 print_as_table(entries, header=header)
 
-print 
+user2prio = defaultdict(list)
+
+BASE_PRIO = -512
+for jid, info in job2info.iteritems():
+    
+    prio = int(re.search("priority:([^\n]+)", info).groups()[0])
+    prio =  prio - BASE_PRIO
+    if prio > 0:
+        prio = color("red", "%sx" %prio)
+    elif prio < 0:
+        prio = color("white", "%sx" %prio)
+    else:
+        prio = color("green", "0x")
+
+    owner = re.search("owner:([^\n]+)", info).groups()[0].strip()
+    user2prio[owner].append(prio)
+    
+print
+for user, priorities in user2prio.iteritems():
+    print "User", color("green",user.ljust(12)), "has", color("yellow", " %2d" %len(priorities)), "project(s) with priorities: ", color("yellow", ', '.join(set(priorities)))
+print
+print color("white", "* project priority is expressed as a fold factor")
+print color("white", "   i.e. 10x = 10 times more priority than the standard level")
+print
 print "# : used"
 print "~ : reserved but not used"    
 print ". : empty"
+
