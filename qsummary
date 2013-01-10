@@ -56,7 +56,7 @@ def bytes2mem(bytes):
     elif bytes > mK:
         return "%0.2fK" %(float(bytes)/mK)
     else:
-        return bytes
+        return str(bytes)
 
 def dictcount(d):
     v2count = defaultdict(int)

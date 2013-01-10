@@ -445,4 +445,5 @@ print
 print "# : used"
 print "~ : reserved but not used"    
 print ". : empty"
-
+print
+print "User 'qres -h' for more info"
