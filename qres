@@ -211,14 +211,17 @@ def mem2bytes(mem):
 
 def bytes2mem(bytes):
     if bytes > mG:
-        return "%0.3gG" %(float(bytes)/mG)
+        v = "%0.1f" %(float(bytes)/mg)
+        v = v.rstrip("0").rstrip(".") +"G"
     elif bytes > mM:
-        return "%0.3gM" %(float(bytes)/mM)
+        v = "%0.1f" %(float(bytes)/mm)
+        v = v.rstrip("0").rstrip(".") +"M"
     elif bytes > mK:
-        return "%0.3gK" %(float(bytes)/mK)
+        v = "%0.1f" %(float(bytes)/mk)
+        v = v.rstrip("0").rstrip(".") +"K"
     else:
-        return str(bytes)
-
+        v = str(bytes)
+    return  v
 
 def get_options():
     '''
@@ -373,7 +376,19 @@ for x in running_jobs[2:]:
         
 entries = []
 
+total_mem_used = 0
+total_mem_reserved = 0
+total_mem = 0
+total_cpu = 0
+total_cpu_used = 0
+    
 for x in hosts:
+    total_mem_used += host2usedmem.get(x, 0)
+    total_mem_reserved += host2vmem.get(x, 0)
+    total_mem += host2avail_mem[x]
+    total_cpu += host2avail_slots[x]
+    total_cpu_used += host2slots.get(x, 0)
+    
     mem_used = host2usedmem.get(x, 0)
     mem_reserved = host2vmem.get(x, 0)
     mem_avail = host2avail_mem[x]
@@ -409,6 +424,25 @@ for x in hosts:
           ]
     entries.append(fields)
 
+# Create totals entry
+HOST_INFO = "%s CPU, %s" %(color("brown", str(total_cpu)), color("lblue", bytes2mem(int(total_mem))))
+if total_mem_used > 0.66 * total_mem_reserved:
+    USED_MEM_COL = "lgreen"
+elif total_mem_used > 0.33 * total_mem_reserved:
+    USED_MEM_COL = "yellow"
+else:
+    USED_MEM_COL = "lred"
+MEM_EFFICIENCY = color(USED_MEM_COL, "%s%%" %( ("%d" %((total_mem_used * 100)  / total_mem_reserved )).rjust(2)))
+entries.append([""]*6)
+fields = ["TOTALS".ljust(8),
+          HOST_INFO,
+              "%s / %s" %(color("cyan", str(total_cpu_used)), total_cpu),
+              "%s / %s (%s)" % (color("cyan", bytes2mem(total_mem_used)), bytes2mem(total_mem_reserved), MEM_EFFICIENCY),
+              "",
+              ""
+          ]
+entries.append(fields)
+    
 # add a description (with colors) before the output with information about
 # what is being printed to stdout
 if options.user != '\'*\'':
