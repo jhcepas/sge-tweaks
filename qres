@@ -370,7 +370,7 @@ for x in running_jobs[2:]:
     ho = queue.split("@")[1].split(".")[0]
     host2usedmem[ho] += job_task2info.get((jid, task), {}).get("vmem", 0)
     host2slots[ho]+= slots
-    jmem = job2vmem[jid]
+
     if PER_SLOT_MEM:
         try:
             host2vmem[ho] += (job2vmem[jid] * slots)
