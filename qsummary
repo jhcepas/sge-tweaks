@@ -3,9 +3,11 @@ import re
 import commands 
 import sys
 from string import strip
+import argparse
 from collections import defaultdict
 import time
 import datetime 
+
 
 mK = 1024
 mM = 1024*1024
@@ -54,7 +56,7 @@ def bytes2mem(bytes):
     elif bytes > mK:
         return "%0.2fK" %(float(bytes)/mK)
     else:
-        return bytes
+        return str(bytes)
 
 def dictcount(d):
     v2count = defaultdict(int)
@@ -68,7 +70,7 @@ def sec2tm(sec):
 
 def get_summary(JOBID):
     text = commands.getoutput("qacct -j %s" %JOBID)
-
+    
     hosts = set()
     task2status = {}
     task2duration = {}
@@ -89,34 +91,46 @@ def get_summary(JOBID):
                     pass
             tinfo[key]=value
         hosts.add(tinfo["hostname"])
-        tid = tinfo["taskid"]
-        task2status[tid] = tinfo["exit_status"]
+        tid = int(tinfo["taskid"])
+        task2status[tid] = int(tinfo["exit_status"])
         task2fail[tid] = tinfo["failed"]
-        task2duration[tid] = tm2sec(tinfo["end_time"]) - tm2sec(tinfo["start_time"])
+        task2duration[tid] = int(tm2sec(tinfo["end_time"]) - tm2sec(tinfo["start_time"]))
         task2mem[tid] = mem2bytes(tinfo["maxvmem"])
         task2cpu[tid] = tinfo["cpu"]
 
     summary = ''
     if task2mem:
         summary +=  "Max mem usage:    " + bytes2mem(max(task2mem.values())) + "\n"
-        summary +=  "Aveg mem usage:   " + bytes2mem(sum(task2mem.values()) / float(len(task2mem))) +"\n"
+        summary +=  "Avg mem usage:   " + bytes2mem(sum(task2mem.values()) / float(len(task2mem))) +"\n"
         summary +=  "Max job duration: " + sec2tm(max(task2duration.values())) + "\n"
-        summary +=  "AVg job duration: " + sec2tm(sum(task2duration.values()) / float(len(task2duration))) +"\n"
+        summary +=  "Avg job duration: " + sec2tm(sum(task2duration.values()) / float(len(task2duration))) +"\n"
         summary += '\n'
         summary +=  " EXIT STATUS     COUNT \n" 
         summary +=  "=============  ========\n"
         summary += dictcount(task2status) + "\n\n"
         summary += 'You can get more info by running "qacct -j %s"\n' %JOBID
+        
+        #summary += '\n'.join(map(str, [k for k, v in task2status.iteritems() if v!=0]))
+
+    if args.dumpfile:
+        print "Dumping info into", args.dumpfile
+        OUT = open(args.dumpfile, "w")
+        print >>OUT, "#" + "\t".join(map(str, ["TaksID (line number)", "exit status", "total mem", "duration", "cpu usage"]))
+        for tid in sorted(task2status):
+            print >>OUT, "\t".join(map(str, [tid, task2status[tid], bytes2mem(task2mem[tid]), sec2tm(task2duration[tid]), task2cpu[tid]]))
+        OUT.close()
+        
     return summary
 
 if __name__ == "__main__":
-    if len(sys.argv)<2:
-        print >>sys.stderr, "You need to provide a jobid (i.e qsummary 105)."
-        exit(1)
-    else:
-        JOBID = sys.argv[1]
-    print get_summary(JOBID)
+    parser = argparse.ArgumentParser(description='Dump summary of array-job')
 
+    parser.add_argument(dest='jobid', help="jobid of the array job")
+
+    parser.add_argument('--dumpfile', dest='dumpfile', type=str, help='dump extended info about job exit status')
+
+    args = parser.parse_args()
+    print get_summary(args.jobid)
 
 
 """

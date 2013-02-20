@@ -12,21 +12,43 @@ MAXVMEMMATCH = re.compile("maxvmem=(\d+(\.\d+)?\w?)")
 VMEMMATCH = re.compile("vmem=(\d+(\.\d+)?\w?)")
 H_VMEMMATCH = re.compile("h_vmem=(\d+(\.\d+)?\w?)")
 H_VMEMMATCH_m = re.compile("h_vmem=(\d+(\.\d+)?\w?)", re.MULTILINE)
-
+DEFAULT_RESERVED_MEM = (1024**3) * 2 
 
 def color(color, string):
     color2code = {
-        "pink": '\033[95m',
-        "blue": '\033[94m',
-        "green": '\033[92m',
+        "header": '\033[95m',
+        "lblue": '\033[94m',
+        "lgreen": '\033[92m',
         "yellow": '\033[93m',
-        "red": '\033[91m',
+        "lred": '\033[91m',
         "magenta": "\033[35m",
         "white": "\033[37m",
-
+        "red": '\033[31m',
+        "blue": '\033[34m',
+        "purple": '\033[35m',
+        "green": '\033[32m',
+        "cyan": '\033[36m',
+        "brown": '\033[33m',
+        
     }
     END = '\033[0m'
     return ''.join([color2code[color], string, END])
+
+class bcolors:
+    HEADER = '\033[95m'
+    BLUE = '\033[94m'
+    GREEN = '\033[92m'
+    YELLOW = '\033[93m'
+    RED = '\033[91m'
+    ENDC = '\033[0m'
+
+    def disable(self):
+        self.HEADER = ''
+        self.BLUE = ''
+        self.GREEN = ''
+        self.YELLOW = ''
+        self.RED = ''
+        self.ENDC = ''
 
 # 
 # Here some utils taken from my scripts
@@ -189,14 +211,17 @@ def mem2bytes(mem):
 
 def bytes2mem(bytes):
     if bytes > mG:
-        return "%0.2fG" %(float(bytes)/mG)
+        v = "%0.1f" %(float(bytes)/mg)
+        v = v.rstrip("0").rstrip(".") +"G"
     elif bytes > mM:
-        return "%0.2fM" %(float(bytes)/mM)
+        v = "%0.1f" %(float(bytes)/mm)
+        v = v.rstrip("0").rstrip(".") +"M"
     elif bytes > mK:
-        return "%0.2fK" %(float(bytes)/mK)
+        v = "%0.1f" %(float(bytes)/mk)
+        v = v.rstrip("0").rstrip(".") +"K"
     else:
-        return str(bytes)
-
+        v = str(bytes)
+    return  v
 
 def get_options():
     '''
@@ -286,16 +311,8 @@ host2avail_mem = {}
 host2avail_slots = {}
 for h in hosts:
     hinfo = commands.getoutput("qconf -se %s" %h)
-    if re.search(H_VMEMMATCH_m, hinfo):
-        mem_match = re.search(H_VMEMMATCH_m, hinfo)
-    else:
-        print 'not found h_vmem consumable resource in ' + h
-        sys.exit()
-    if  re.search("[\s,]?slots=(\d+)", hinfo, re.MULTILINE):
-        slots_match = re.search("[\s,]?slots=(\d+)", hinfo, re.MULTILINE)
-    else:
-        print 'not found slot consumable resource in exec nodes'
-        sys.exit()
+    mem_match = re.search(H_VMEMMATCH_m, hinfo)
+    slots_match = re.search("[\s,]?slots=(\d+)", hinfo, re.MULTILINE)
     if mem_match:
         host2avail_mem[h] = mem2bytes(mem_match.groups()[0])
     if mem_match:
@@ -329,6 +346,8 @@ for x in running_jobs[2:]:
                 mem_match = re.search(H_VMEMMATCH, line)
                 if mem_match:
                     job2vmem[jid] = mem2bytes(mem_match.groups()[0])
+                else:
+                    job2vmem[jid] = DEFAULT_RESERVED_MEM
 
             elif usage_match:
                 taskinfo = {}
@@ -346,6 +365,7 @@ for x in running_jobs[2:]:
     ho = queue.split("@")[1].split(".")[0]
     host2usedmem[ho] += job_task2info.get((jid, task), {}).get("vmem", 0)
     host2slots[ho]+= slots
+    jmem = job2vmem[jid]
     if PER_SLOT_MEM:
         try:
             host2vmem[ho] += (job2vmem[jid] * slots)
@@ -362,7 +382,19 @@ for x in running_jobs[2:]:
         
 entries = []
 
+total_mem_used = 0
+total_mem_reserved = 0
+total_mem = 0
+total_cpu = 0
+total_cpu_used = 0
+    
 for x in hosts:
+    total_mem_used += host2usedmem.get(x, 0)
+    total_mem_reserved += host2vmem.get(x, 0)
+    total_mem += host2avail_mem[x]
+    total_cpu += host2avail_slots[x]
+    total_cpu_used += host2slots.get(x, 0)
+    
     mem_used = host2usedmem.get(x, 0)
     mem_reserved = host2vmem.get(x, 0)
     mem_avail = host2avail_mem[x]
@@ -375,42 +407,93 @@ for x in hosts:
     mem_char_unused = int(round(mem_factor_unused))
     mem_char_free = MEM_STRING_LEN- mem_char_used - mem_char_unused
 
-    if mem_used > 0.75 * mem_reserved:
-        USED_MEM_COL = "red"
-    elif mem_used > 0.5 * mem_reserved:
-        USED_MEM_COL = "magenta"
+    if mem_used > 0.66 * mem_reserved:
+        USED_MEM_COL = "lgreen"
+    elif mem_used > 0.33 * mem_reserved:
+        USED_MEM_COL = "yellow"
     else:
-        USED_MEM_COL = "white"
+        USED_MEM_COL = "lred"
+
+    MEM_EFFICIENCY = color(USED_MEM_COL, "%s%%" %( ("%d" %((mem_used * 100)  / mem_reserved )).rjust(2)))
+
+    HOST_INFO = "%s CPU, %s" %(color("brown", str(host2avail_slots[x])), color("lblue", bytes2mem(mem_avail)))
     
-    fields = [x.ljust(8), host2slots.get(x, 0), host2avail_slots[x],
-              color(USED_MEM_COL, bytes2mem(mem_reserved)),
-              color(USED_MEM_COL, bytes2mem(mem_used)),
-              color("blue", bytes2mem(mem_avail)),
+    fields = [x.ljust(8),
+              HOST_INFO,
+              "%s / %s" %(color("cyan", str(host2slots.get(x, 0))), host2avail_slots[x]),
+              "%s / %s (%s)" % (color("cyan", bytes2mem(mem_used)), bytes2mem(mem_reserved), MEM_EFFICIENCY),
               color("red", "#" * mem_char_used) +
-              color("magenta", "~" * mem_char_unused) +
+              color("white", "~" * mem_char_unused) +
               color("white", " " * mem_char_free), 
               color("red", "#"*host2slots.get(x, 0)) +
               ("." * (host2avail_slots[x] - host2slots.get(x, 0)))
           ]
     entries.append(fields)
 
+# Create totals entry
+HOST_INFO = "%s CPU, %s" %(color("brown", str(total_cpu)), color("lblue", bytes2mem(int(total_mem))))
+if total_mem_used > 0.66 * total_mem_reserved:
+    USED_MEM_COL = "lgreen"
+elif total_mem_used > 0.33 * total_mem_reserved:
+    USED_MEM_COL = "yellow"
+else:
+    USED_MEM_COL = "lred"
+MEM_EFFICIENCY = color(USED_MEM_COL, "%s%%" %( ("%d" %((total_mem_used * 100)  / total_mem_reserved )).rjust(2)))
+entries.append([""]*6)
+fields = ["TOTALS".ljust(8),
+          HOST_INFO,
+              "%s / %s" %(color("cyan", str(total_cpu_used)), total_cpu),
+              "%s / %s (%s)" % (color("cyan", bytes2mem(total_mem_used)), bytes2mem(total_mem_reserved), MEM_EFFICIENCY),
+              "",
+              ""
+          ]
+entries.append(fields)
+    
 # add a description (with colors) before the output with information about
 # what is being printed to stdout
 if options.user != '\'*\'':
-    description = color("pink", "\n User " + options.user + "\n")
+    description =  "\n" + bcolors.HEADER + "User " + options.user + bcolors.ENDC + "\n"
     if options.queue:
-        description = color("pink", "\n User " + options.user + " in queue " + options.queue + "\n")
+        desk =  "\n" + bcolors.HEADER + "User " + options.user +\
+        " in queue " + options.queue + bcolors.ENDC + "\n"
 else:
     if options.queue:
-        description =  color("pink","\n Jobs in queue " + options.queue + "\n")
-    else: description =  color("pink","\n CLUSTER STATS \n")
+        description =  "\n" + bcolors.HEADER + "Jobs in queue " + options.queue +\
+        bcolors.ENDC + "\n"
+    else: description =  "\n" + bcolors.HEADER + "CLUSTER STATS " + bcolors.ENDC + "\n"
 
 print description    
-header = "Host", "S.used", "S.tot.", "M.res.", "M.used","M.tot.", "Mem graph", "Slots graph" 
+header = "hostname", "host info", "CPU", "Mem: used/reserved", "Mem usage", "CPU usage" 
+#header = bcolors.HEADER + "Host", "S.used", "S.tot.", "M.res.", "M.used","M.tot.", "Mem graph", "Slots graph" + bcolors.ENDC
 
 print_as_table(entries, header=header)
 
-print 
-print "# : used"
-print "~ : reserved but not used"    
-print ". : empty"
+user2prio = defaultdict(list)
+
+BASE_PRIO = -512
+for jid, info in job2info.iteritems():
+    
+    prio = int(re.search("priority:([^\n]+)", info).groups()[0])
+    prio =  prio - BASE_PRIO
+    if prio > 0:
+        prio = color("lred", "%sx" %prio)
+    elif prio < 0:
+        prio = color("white", "%sx" %prio)
+    else:
+        prio = color("lgreen", "0x")
+
+    owner = re.search("owner:([^\n]+)", info).groups()[0].strip()
+    user2prio[owner].append(prio)
+    
+print
+for user, priorities in user2prio.iteritems():
+    print "User", color("green",user.ljust(12)), "has", color("yellow", " %d" %len(priorities)), "project(s) with priorities: ", color("yellow", ', '.join(set(priorities)))
+print
+print color("white", "* project priority is expressed as a fold factor")
+print color("white", "   i.e. 10x = 10 times more priority than the standard level")
+print
+print color("red", "#"),": used"
+print color("white", "~"),": reserved but not used"    
+print ". : not used"
+print
+print "User 'qres -h' for more info"
