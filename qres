@@ -372,9 +372,15 @@ for x in running_jobs[2:]:
     host2slots[ho]+= slots
     jmem = job2vmem[jid]
     if PER_SLOT_MEM:
-        host2vmem[ho] += (jmem * slots)
+        try:
+            host2vmem[ho] += (job2vmem[jid] * slots)
+        except KeyError:
+            print 'h_vmem reservation not found in job with uid %s' % sys.exc_value
     else:
-        host2vmem[ho] += jmem
+        try:
+            host2vmem[ho] += job2vmem[jid]
+        except KeyError:
+            print 'h_vmem reservation not found in job with uid %s' % sys.exc_value
 
 
 ## show collected info
@@ -466,6 +472,7 @@ else:
 print description    
 header = "hostname", "host info", "CPU", "Mem: used/reserved", "Mem usage", "CPU usage" 
 #header = bcolors.HEADER + "Host", "S.used", "S.tot.", "M.res.", "M.used","M.tot.", "Mem graph", "Slots graph" + bcolors.ENDC
+
 
 print_as_table(entries, header=header)
 
