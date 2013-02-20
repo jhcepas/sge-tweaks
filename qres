@@ -408,10 +408,10 @@ for x in hosts:
     else:
         USED_MEM_COL = "lred"
 
-    MEM_EFFICIENCY = color(USED_MEM_COL, "%s%%" %( ("%d" %((mem_used * 100)  / mem_reserved )).rjust(2)))
-
+    mem_eff = (mem_used * 100)  / mem_reserved if mem_reserved else 0.0
+    MEM_EFFICIENCY = color(USED_MEM_COL, "%s%%" %( ("%d" %mem_eff).rjust(2)))
     HOST_INFO = "%s CPU, %s" %(color("brown", str(host2avail_slots[x])), color("lblue", bytes2mem(mem_avail)))
-    
+   
     fields = [x.ljust(8),
               HOST_INFO,
               "%s / %s" %(color("cyan", str(host2slots.get(x, 0))), host2avail_slots[x]),
@@ -432,7 +432,9 @@ elif total_mem_used > 0.33 * total_mem_reserved:
     USED_MEM_COL = "yellow"
 else:
     USED_MEM_COL = "lred"
-MEM_EFFICIENCY = color(USED_MEM_COL, "%s%%" %( ("%d" %((total_mem_used * 100)  / total_mem_reserved )).rjust(2)))
+
+mem_eff = (total_mem_used * 100)  / total_mem_reserved if total_mem_reserved else 0.0
+MEM_EFFICIENCY = color(USED_MEM_COL, "%s%%" %( ("%d" %mem_eff).rjust(2)))
 entries.append([""]*6)
 fields = ["TOTALS".ljust(8),
           HOST_INFO,
