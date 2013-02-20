@@ -273,7 +273,8 @@ def bytes2mem(bytes):
     return  v
 
 
-def parse_running_jobs(jobs):
+def parse_running_jobs(jobs, valid_hosts):
+    valid_hosts = set(valid_hosts)
     ## Load info about running jobs
     job2info = defaultdict(dict)
     tasks = []
@@ -287,6 +288,9 @@ def parse_running_jobs(jobs):
             
         queue, host = queue.split("@")
         host = host.split(".")[0]
+        if host not in valid_hosts:
+            continue
+           
         jid, task = map(int, [jid, task])
         tasks.append([jid, task, queue, host])
         if jid not in job2info:
@@ -431,7 +435,7 @@ if __name__ == "__main__":
         running_jobs = map(strip, commands.getoutput('qstat -s r -u ' +\
                 options.user).split("\n"))
 
-    tasks, job2info = parse_running_jobs(running_jobs)
+    tasks, job2info = parse_running_jobs(running_jobs, hosts)
     host2Umem, host2Rmem, host2Ucpu = sort_resources_by_host(tasks, job2info)
 
         
