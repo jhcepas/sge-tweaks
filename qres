@@ -17,13 +17,19 @@ DEFAULT_RESERVED_MEM = (1024**3) * 2
 def color(color, string):
     color2code = {
         "header": '\033[95m',
-        "blue": '\033[94m',
-        "green": '\033[92m',
+        "lblue": '\033[94m',
+        "lgreen": '\033[92m',
         "yellow": '\033[93m',
-        "red": '\033[91m',
+        "lred": '\033[91m',
         "magenta": "\033[35m",
         "white": "\033[37m",
-
+        "red": '\033[31m',
+        "blue": '\033[34m',
+        "purple": '\033[35m',
+        "green": '\033[32m',
+        "cyan": '\033[36m',
+        "brown": '\033[33m',
+        
     }
     END = '\033[0m'
     return ''.join([color2code[color], string, END])
@@ -205,11 +211,11 @@ def mem2bytes(mem):
 
 def bytes2mem(bytes):
     if bytes > mG:
-        return "%0.2fG" %(float(bytes)/mG)
+        return "%0.3gG" %(float(bytes)/mG)
     elif bytes > mM:
-        return "%0.2fM" %(float(bytes)/mM)
+        return "%0.3gM" %(float(bytes)/mM)
     elif bytes > mK:
-        return "%0.2fK" %(float(bytes)/mK)
+        return "%0.3gK" %(float(bytes)/mK)
     else:
         return str(bytes)
 
@@ -380,19 +386,23 @@ for x in hosts:
     mem_char_unused = int(round(mem_factor_unused))
     mem_char_free = MEM_STRING_LEN- mem_char_used - mem_char_unused
 
-    if mem_used > 0.75 * mem_reserved:
-        USED_MEM_COL = "red"
-    elif mem_used > 0.5 * mem_reserved:
-        USED_MEM_COL = "magenta"
+    if mem_used > 0.66 * mem_reserved:
+        USED_MEM_COL = "lgreen"
+    elif mem_used > 0.33 * mem_reserved:
+        USED_MEM_COL = "yellow"
     else:
-        USED_MEM_COL = "white"
+        USED_MEM_COL = "lred"
+
+    MEM_EFFICIENCY = color(USED_MEM_COL, "%s%%" %( ("%d" %((mem_used * 100)  / mem_reserved )).rjust(2)))
+
+    HOST_INFO = "%s CPU, %s" %(color("brown", str(host2avail_slots[x])), color("lblue", bytes2mem(mem_avail)))
     
-    fields = [x.ljust(8), host2slots.get(x, 0), host2avail_slots[x],
-              color(USED_MEM_COL, bytes2mem(mem_reserved)),
-              color(USED_MEM_COL, bytes2mem(mem_used)),
-              color("blue", bytes2mem(mem_avail)),
+    fields = [x.ljust(8),
+              HOST_INFO,
+              "%s / %s" %(color("cyan", str(host2slots.get(x, 0))), host2avail_slots[x]),
+              "%s / %s (%s)" % (color("cyan", bytes2mem(mem_used)), bytes2mem(mem_reserved), MEM_EFFICIENCY),
               color("red", "#" * mem_char_used) +
-              color("magenta", "~" * mem_char_unused) +
+              color("white", "~" * mem_char_unused) +
               color("white", " " * mem_char_free), 
               color("red", "#"*host2slots.get(x, 0)) +
               ("." * (host2avail_slots[x] - host2slots.get(x, 0)))
@@ -413,7 +423,7 @@ else:
     else: description =  "\n" + bcolors.HEADER + "CLUSTER STATS " + bcolors.ENDC + "\n"
 
 print description    
-header = "Host", "S.used", "S.tot.", "M.res.", "M.used","M.tot.", "Mem graph", "Slots graph" 
+header = "hostname", "host info", "CPU", "Mem: used/reserved", "Mem usage", "CPU usage" 
 #header = bcolors.HEADER + "Host", "S.used", "S.tot.", "M.res.", "M.used","M.tot.", "Mem graph", "Slots graph" + bcolors.ENDC
 
 print_as_table(entries, header=header)
@@ -426,24 +436,24 @@ for jid, info in job2info.iteritems():
     prio = int(re.search("priority:([^\n]+)", info).groups()[0])
     prio =  prio - BASE_PRIO
     if prio > 0:
-        prio = color("red", "%sx" %prio)
+        prio = color("lred", "%sx" %prio)
     elif prio < 0:
         prio = color("white", "%sx" %prio)
     else:
-        prio = color("green", "0x")
+        prio = color("lgreen", "0x")
 
     owner = re.search("owner:([^\n]+)", info).groups()[0].strip()
     user2prio[owner].append(prio)
     
 print
 for user, priorities in user2prio.iteritems():
-    print "User", color("green",user.ljust(12)), "has", color("yellow", " %2d" %len(priorities)), "project(s) with priorities: ", color("yellow", ', '.join(set(priorities)))
+    print "User", color("green",user.ljust(12)), "has", color("yellow", " %d" %len(priorities)), "project(s) with priorities: ", color("yellow", ', '.join(set(priorities)))
 print
 print color("white", "* project priority is expressed as a fold factor")
 print color("white", "   i.e. 10x = 10 times more priority than the standard level")
 print
-print "# : used"
-print "~ : reserved but not used"    
-print ". : empty"
+print color("red", "#"),": used"
+print color("white", "~"),": reserved but not used"    
+print ". : not used"
 print
 print "User 'qres -h' for more info"
