@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import commands
+from commands import getoutput
 import sys
 import os
 import argparse
@@ -7,13 +8,91 @@ from string import strip
 from collections import defaultdict 
 import re
 
+DEFAULT_JOB_PRIO = -512
 MEM_STRING_LEN = 15
 MAXVMEMMATCH = re.compile("maxvmem=(\d+(\.\d+)?\w?)")
 VMEMMATCH = re.compile("vmem=(\d+(\.\d+)?\w?)")
 H_VMEMMATCH = re.compile("h_vmem=(\d+(\.\d+)?\w?)")
 H_VMEMMATCH_m = re.compile("h_vmem=(\d+(\.\d+)?\w?)", re.MULTILINE)
-DEFAULT_RESERVED_MEM = (1024**3) * 2 
+USAGE_MATCH = re.compile("^usage\s+(\d+):(.+)")
+# SOME CONSTANTS
+mK = 1024
+mM = 1024*1024
+mG = 1024*1024*1024
+mT = 1024*1024*1024*1024
 
+mk = 1000
+mm = 1000*1000
+mg = 1000*1000*1000
+mt = 1000*1000*1000*1000
+
+DAY = 3600 * 24
+HOUR = 3600
+MINUTE = 60
+
+def runcheck():
+    DEFAULT_RESERVED_MEM, DEFAULT_SLOTS, PER_SLOT_MEM = 0, 0, False
+    USERS = set([user.strip() for user in
+                 commands.getoutput('qconf -suserl').split("\n")])
+    QUEUES = set([queue.strip() for queue in
+                 commands.getoutput('qconf -sql').split("\n")])
+
+    HOSTNAMES = set([host.split(".")[0] for host in
+                     commands.getoutput('qconf -sel').split("\n")])
+    consumables = getoutput("qconf -sc")
+    for line in consumables.split("\n"):
+        fields = map(strip, line.split())
+        if fields[0] == "h_vmem":
+            if fields[4].upper() == "YES" and fields[5].upper() in ["YES", "JOB"]:
+                DEFAULT_RESERVED_MEM = mem2bytes(fields[6])
+                if fields[5].upper() == "YES":
+                    PER_SLOT_MEM = True
+            else:
+                print "ERROR: h_vmem is not defined as a consumable resource:"
+                print line
+                sys.exit(1)
+            
+        elif line.startswith("slots"):
+            if fields[4].upper() == "YES" and fields[5].upper() == "YES":
+                DEFAULT_SLOTS = mem2bytes(fields[6])
+            else:
+                print "ERROR: slots is not defined as a consumable resource:"
+                print line
+                sys.exit(1)
+                
+    ## detect consumables of each host
+    host2avail_mem = {}
+    host2avail_slots = {}
+    for h in HOSTNAMES:
+        hinfo = commands.getoutput("qconf -se %s" %h)
+        mem_match = re.search(H_VMEMMATCH_m, hinfo)
+        slots_match = re.search("[\s,]?slots=(\d+)", hinfo, re.MULTILINE)
+
+        if mem_match:
+            host2avail_mem[h] = mem2bytes(mem_match.groups()[0])
+        else:
+            print 'h_vmem should be defined as consumable resource in ' + h
+            sys.exit(1)
+        if slots_match:
+            host2avail_slots[h] = int(slots_match.groups()[0])
+        else:
+            print 'slot should be defined as consumable resource in ' + h
+            sys.exit(1)
+        
+    return (USERS, QUEUES, HOSTNAMES, DEFAULT_RESERVED_MEM,
+            DEFAULT_SLOTS, PER_SLOT_MEM, host2avail_mem, host2avail_slots)
+        
+def load_general_values():
+    USERS = set([user.strip() for user in
+                 commands.getoutput('qconf -suserl').split("\n")])
+    QUEUES = set([queue.strip() for queue in
+                 commands.getoutput('qconf -sql').split("\n")])
+
+    HOSTNAMES = set([host.split("@")[0] for host in
+                     commands.getoutput('qconf -sel').split("\n")])
+    
+    return QUEUES, USERS, HOSTNAMES
+        
 def color(color, string):
     color2code = {
         "header": '\033[95m',
@@ -33,39 +112,6 @@ def color(color, string):
     }
     END = '\033[0m'
     return ''.join([color2code[color], string, END])
-
-class bcolors:
-    HEADER = '\033[95m'
-    BLUE = '\033[94m'
-    GREEN = '\033[92m'
-    YELLOW = '\033[93m'
-    RED = '\033[91m'
-    ENDC = '\033[0m'
-
-    def disable(self):
-        self.HEADER = ''
-        self.BLUE = ''
-        self.GREEN = ''
-        self.YELLOW = ''
-        self.RED = ''
-        self.ENDC = ''
-
-# 
-# Here some utils taken from my scripts
-#
-mK = 1024
-mM = 1024*1024
-mG = 1024*1024*1024
-mT = 1024*1024*1024*1024
-
-mk = 1000
-mm = 1000*1000
-mg = 1000*1000*1000
-mt = 1000*1000*1000*1000
-
-DAY = 3600 * 24
-HOUR = 3600
-MINUTE = 60
 
 def get_hosts_in_queues(queues):
     all_hosts = set()
@@ -97,7 +143,6 @@ def get_hosts_in_queues(queues):
     return list(set(all_hosts_list))
 
 def get_hosts_for_user(user):
-
     hosts = map(strip, commands.getoutput('qstat -s r -u ' + user + ' | grep -v job-ID |grep -v\
     \'\-\-\'|awk {\'print $8\'}|awk -F \"@\" {\'print $2\'} |awk -F \'.\'\
     {\'print $1\'}').split("\n"))
@@ -183,7 +228,6 @@ def print_as_table(rows, header=None, fields=None, print_header=True, stdout=sys
             print >>stdout, ""
             page_counter +=1
 
-
 def tm2sec(tm):
     try:
         return time.mktime(time.strptime(tm))
@@ -228,286 +272,302 @@ def bytes2mem(bytes):
         v = str(bytes)
     return  v
 
-def get_options():
-    '''
-    parse option from command line call
-    '''
+
+def parse_running_jobs(jobs):
+    ## Load info about running jobs
+    job2info = defaultdict(dict)
+    tasks = []
+    # Load basic info about running jobs and tasks
+    for x in jobs[2:]:
+        try:
+            jid, pri, name, user, status, date, tm,  queue, slots, task = fields = x.split()
+        except ValueError:
+            task = 1
+            jid, pri, name, user, status, date, tm,  queue, slots = fields = x.split()
+            
+        queue, host = queue.split("@")
+        host = host.split(".")[0]
+        jid, task = map(int, [jid, task])
+        tasks.append([jid, task, queue, host])
+        if jid not in job2info:
+            job2info[jid]["raw"] = getoutput("qstat -j %s" %jid)
+            for line in job2info[jid]["raw"].split("\n"):
+                usage_match = re.search(USAGE_MATCH, line)
+                if usage_match:
+                    taskid = int(usage_match.groups()[0])
+                    mem_match = re.search(VMEMMATCH, line)
+                    maxmem_match = re.search(MAXVMEMMATCH, line)
+                    job2info[jid][taskid] = {}
+                    if mem_match: 
+                        job2info[jid][taskid]["vmem"] = mem2bytes(mem_match.groups()[0])
+                    else:
+                        job2info[jid][taskid]["vmem"] = 0
+                    if maxmem_match:
+                        job2info[jid][taskid]["maxvmem"] = mem2bytes(maxmem_match.groups()[0])
+                    else:
+                        job2info[jid][taskid]["maxvmem"] = 0
+                        
+                elif line.startswith("hard resource_list:"):
+                    rt_match = re.search("h_rt=(\d+)", line)
+                    mem_match = re.search(H_VMEMMATCH, line)
+                    smp_match = re.search("smp range:(.+)", line)
+                    if rt_match:
+                        job2info[jid]["h_rt"] = int(rt_match.groups()[0])
+                    if mem_match:
+                        job2info[jid]["r.mem"] = mem2bytes(mem_match.groups()[0])
+                    else:
+                        job2info[jid]["r.mem"] = DEFAULT_RESERVED_MEM
+                    if smp_match:
+                        job2info[jid]["smp"] = int(smp_match.groups()[0])
+                    else:
+                        job2info[jid]["smp"] = 1
+
+                elif line.startswith("priority:"):
+                    job2info[jid]["prio"] = int(re.search("priority:([^\n]+)", line).groups()[0])
+                    
+                elif line.startswith("owner:"):
+                    job2info[jid]["user"] = re.search("owner:([^\n]+)", line).groups()[0].strip()
+
+                    
+    return tasks, job2info
+
+
+
+def sort_resources_by_host(tasks, job2info):
+    host2Umem = defaultdict(int)
+    host2Rmem = defaultdict(int)
+    host2Ucpu = defaultdict(int)
+    
+    for jid, taskid, queue, host in tasks:
+        tinfo = job2info[jid][taskid]
+        jinfo = job2info[jid]
+        if PER_SLOT_MEM:
+            rmem = jinfo["r.mem"] * jinfo["smp"]
+        else:
+            rmem = jinfo["r.mem"]
+                    
+        host2Rmem[host] += rmem
+        host2Umem[host] += tinfo["vmem"]
+        host2Ucpu[host] += jinfo["smp"]
+
+    return host2Umem, host2Rmem, host2Ucpu
+
+
+
+if __name__ == "__main__":
+    # Let's first check if resources are defined as consumable in sge
+    # config
+    (USERS, QUEUES, HOSTNAMES, DEFAULT_RESERVED_MEM, DEFAULT_SLOTS,
+     PER_SLOT_MEM, host2Amem, host2Acpu) = runcheck()
+    
+    # Parse options
     parser = argparse.ArgumentParser(description='Show your cluster usage')
 
-    parser.add_argument('-u', dest='user', default='\'*\'', help='query\
-    just this user')
+    parser.add_argument('-u', dest='user', default="'*'",
+                        help='show stats just for this user')
 
-    parser.add_argument('-q', dest='queue', help='query \
-            just this queue')
+    parser.add_argument('-q', dest='queue',
+                        help='show stats just for this queue')
 
+    parser.add_argument('-e', dest='hosts', nargs="+",
+                        help='show stats just for list of execution hostnames')
 
+    
     options = parser.parse_args()
-
+        
     # check if user exists
-    if options.user != '\'*\'':
-        userList = set()
-        for user in commands.getoutput('qconf -suserl').split("\n"):
-            userList.add(user)
-        if options.user not in userList:
-            print 'user ' + options.user + ' not found'
-            sys.exit()
+    if options.user != "'*'" and options.user not in USERS: 
+        print 'user ' + options.user + ' not found'
+        sys.exit()
 
     # check if queue exists
-    if options.queue:
-        if (os.system('qconf -sq ' + options.queue + ' > /dev/null')) != 0:
+    if options.queue and options.queue not in QUEUES:
+        print 'queue ' + options.queue + ' not found'
+        sys.exit()
+
+    if options.hosts:
+        user_hosts = set(options.hosts)
+        if user_hosts - HOSTNAMES:
+            print user_hosts - HOSTNAMES, "are not found"
             sys.exit()
+        else:
+            hosts = sorted(user_hosts)
+    else:
+        hosts = sorted(HOSTNAMES)
     
+    ## detect host names
+    # I had to use shorter host names (without domain), because they were truncated in qstat output
+    # hosts = map(strip, commands.getoutput("qconf -sel").split("\n"))
 
-    return options
+    # is user arg is passed only take the node where that
+    # user is running jobs
+    #if options.user != '\'*\'':
+    #    hosts = get_hosts_for_user(options.user)
+    #    # if both user and queue args are passed...
+    #    if options.queue:
+    #        hostsInQueue = map(strip, get_hosts_in_queues([options.queue]))
+    #        toRemove = []
+    #        for x in hosts:
+    #            if x not in hostsInQueue:
+    #                toRemove.append(x)
+    #        for x in toRemove:
+    #            hosts.remove(x)
+    #    hosts.sort()
+    #else:
+    #    # if just queue arg is passed...
+    #    if options.queue:
+    #        hosts = map(strip, get_hosts_in_queues([options.queue]))
+    #        hosts.sort()
+    #    # if no arg is passed take all exec nodes
+    #    else:
+    #        hosts = map(strip, commands.getoutput('qconf -sel|cut -f1 -d"."').split("\n"))
+    #        hosts.sort()
 
-
-
-## 
-## Main program starts here
-##
-
-options = get_options()
-        
-## Detect type of mem consumable
-PER_SLOT_MEM=False
-mem_consumable_type = commands.getoutput('qconf -sc|grep h_vmem|awk \'{print $6}\'').strip()
-if mem_consumable_type == "YES":
-    PER_SLOT_MEM = True
-
-## detect host names
-
-# I had to use shorter host names (without domain), because they were truncated in qstat output
-# hosts = map(strip, commands.getoutput("qconf -sel").split("\n"))
-
-# is user arg is passed only take the node where that
-# user is running jobs
-if options.user != '\'*\'':
-    hosts = get_hosts_for_user(options.user)
-    # if both user and queue args are passed...
+    ## Detect running jobs
     if options.queue:
-        hostsInQueue = map(strip, get_hosts_in_queues([options.queue]))
-        toRemove = []
-        for x in hosts:
-            if x not in hostsInQueue:
-                toRemove.append(x)
-        for x in toRemove:
-            hosts.remove(x)
-    hosts.sort()
-else:
-    # if just queue arg is passed...
-    if options.queue:
-        hosts = map(strip, get_hosts_in_queues([options.queue]))
-        hosts.sort()
-    # if no arg is passed take all exec nodes
+        running_jobs = map(strip, commands.getoutput('qstat -s r -u ' +\
+            options.user + ' -q ' + options.queue).split("\n"))
     else:
-        hosts = map(strip, commands.getoutput('qconf -sel|cut -f1 -d"."').split("\n"))
-        hosts.sort()
+        running_jobs = map(strip, commands.getoutput('qstat -s r -u ' +\
+                options.user).split("\n"))
 
-## Detect running jobs
-if options.queue:
-    running_jobs = map(strip, commands.getoutput('qstat -s r -u ' +\
-        options.user + ' -q ' + options.queue).split("\n"))
-else:
-    running_jobs = map(strip, commands.getoutput('qstat -s r -u ' +\
-            options.user).split("\n"))
+    tasks, job2info = parse_running_jobs(running_jobs)
+    host2Umem, host2Rmem, host2Ucpu = sort_resources_by_host(tasks, job2info)
 
-## detect consumables of each host
-host2avail_mem = {}
-host2avail_slots = {}
-for h in hosts:
-    hinfo = commands.getoutput("qconf -se %s" %h)
-    mem_match = re.search(H_VMEMMATCH_m, hinfo)
-    slots_match = re.search("[\s,]?slots=(\d+)", hinfo, re.MULTILINE)
-   
-    if mem_match:
-        host2avail_mem[h] = mem2bytes(mem_match.groups()[0])
-    else:
-        print 'h_vmem should be defined as consumable resource in ' + h
-        sys.exit()
-    if slots_match:
-        host2avail_slots[h] = int(slots_match.groups()[0])
-    else:
-        print 'slot should be defined as consumable resource in ' + h
-        sys.exit()
-
-
-## Load info about running jobs
-host2slots = defaultdict(int)
-host2vmem = defaultdict(int)
-host2usedmem = defaultdict(int)
-job2info = {}
-job2vmem = {}
-job_task2info = {}
-
-for x in running_jobs[2:]:
-    try:
-        jid, pri, name, user, status, date, tm,  queue, slots, task = fields = x.split()
-    except ValueError:
-        task = 1
-        jid, pri, name, user, status, date, tm,  queue, slots = fields = x.split()
-    
-    slots = int(slots)
-    task = int(task)
-    jid = int(jid)
-    if jid not in job2info:
-        content = job2info[jid] = commands.getoutput("qstat -j %s" %jid)
-        for line in content.split("\n"):
-            usage_match = re.search("^usage\s+(\d+):(.+)", line)
-            if line.startswith("hard resource_list:"):
-                rt_match = re.search("h_rt=(\d+)", line)
-                mem_match = re.search(H_VMEMMATCH, line)
-                if mem_match:
-                    job2vmem[jid] = mem2bytes(mem_match.groups()[0])
-                else:
-                    job2vmem[jid] = DEFAULT_RESERVED_MEM
-
-            elif usage_match:
-                taskinfo = {}
-                taskid = int(usage_match.groups()[0])
-                mem_match = re.search(VMEMMATCH, line)
-                maxmem_match = re.search(MAXVMEMMATCH, line)
-                if maxmem_match:
-                    taskinfo["maxvmem"] = mem2bytes(maxmem_match.groups()[0])
-                if maxmem_match:
-                    taskinfo["vmem"] = mem2bytes(mem_match.groups()[0])
-                taskinfo["raw"] = line
-                job_task2info[(jid, taskid)] = taskinfo
-                   
-                    
-    ho = queue.split("@")[1].split(".")[0]
-    host2usedmem[ho] += job_task2info.get((jid, task), {}).get("vmem", 0)
-    host2slots[ho]+= slots
-
-    if PER_SLOT_MEM:
-        try:
-            host2vmem[ho] += (job2vmem[jid] * slots)
-        except KeyError:
-            print 'h_vmem reservation not found in job with uid %s' % sys.exc_value
-    else:
-        try:
-            host2vmem[ho] += job2vmem[jid]
-        except KeyError:
-            print 'h_vmem reservation not found in job with uid %s' % sys.exc_value
-
-## show collected info
         
-entries = []
+    ## show collected info
 
-total_mem_used = 0
-total_mem_reserved = 0
-total_mem = 0
-total_cpu = 0
-total_cpu_used = 0
-    
-for x in hosts:
-    total_mem_used += host2usedmem.get(x, 0)
-    total_mem_reserved += host2vmem.get(x, 0)
-    total_mem += host2avail_mem[x]
-    total_cpu += host2avail_slots[x]
-    total_cpu_used += host2slots.get(x, 0)
-    
-    mem_used = host2usedmem.get(x, 0)
-    mem_reserved = host2vmem.get(x, 0)
-    mem_avail = host2avail_mem[x]
+    entries = []
 
-    mem_factor_used = (mem_used * MEM_STRING_LEN) / mem_avail
-    mem_factor_unused = (mem_reserved * MEM_STRING_LEN) / mem_avail
-    mem_factor_unused -= mem_factor_used
+    total_mem_used = 0
+    total_mem_reserved = 0
+    total_mem = 0
+    total_cpu = 0
+    total_cpu_used = 0
 
-    mem_char_used = int(round(mem_factor_used))
-    mem_char_unused = int(round(mem_factor_unused))
-    mem_char_free = MEM_STRING_LEN- mem_char_used - mem_char_unused
+    for x in hosts:
+        total_mem_used += host2Umem.get(x, 0)
+        total_mem_reserved += host2Rmem.get(x, 0)
+        total_mem += host2Amem[x]
+        total_cpu += host2Acpu[x]
+        total_cpu_used += host2Ucpu.get(x, 0)
 
-    if mem_used > 0.66 * mem_reserved:
+        mem_used = host2Umem.get(x, 0)
+        mem_reserved = host2Rmem.get(x, 0)
+        mem_avail = host2Amem[x]
+
+        mem_factor_used = (mem_used * MEM_STRING_LEN) / mem_avail
+        mem_factor_unused = (mem_reserved * MEM_STRING_LEN) / mem_avail
+        mem_factor_unused -= mem_factor_used
+
+        mem_char_used = int(round(mem_factor_used))
+        mem_char_unused = int(round(mem_factor_unused))
+        mem_char_free = MEM_STRING_LEN- mem_char_used - mem_char_unused
+
+        if mem_used > 0.66 * mem_reserved:
+            USED_MEM_COL = "lgreen"
+        elif mem_used > 0.33 * mem_reserved:
+            USED_MEM_COL = "yellow"
+        else:
+            USED_MEM_COL = "lred"
+
+        mem_eff = (mem_used * 100)  / mem_reserved if mem_reserved else 0.0
+        MEM_EFFICIENCY = color(USED_MEM_COL, "%s%%" %( ("%d" %mem_eff).rjust(2)))
+        HOST_INFO = "%s CPU, %s" %(color("brown", str(host2Acpu[x])), color("lblue", bytes2mem(mem_avail)))
+
+        fields = [x.ljust(8),
+                  HOST_INFO,
+                  "%s / %s" %(color("cyan", str(host2Ucpu.get(x, 0))), host2Acpu[x]),
+                  "%s / %s (%s)" % (color("cyan", bytes2mem(mem_used)), bytes2mem(mem_reserved), MEM_EFFICIENCY),
+                  color("red", "#" * mem_char_used) +
+                  color("white", "~" * mem_char_unused) +
+                  color("white", " " * mem_char_free), 
+                  color("red", "#"*host2Ucpu.get(x, 0)) +
+                  ("." * (host2Acpu[x] - host2Ucpu.get(x, 0)))
+              ]
+        entries.append(fields)
+
+    # Create totals entry
+    HOST_INFO = "%s CPU, %s" %(color("brown", str(total_cpu)), color("lblue", bytes2mem(int(total_mem))))
+    if total_mem_used > 0.66 * total_mem_reserved:
         USED_MEM_COL = "lgreen"
-    elif mem_used > 0.33 * mem_reserved:
+    elif total_mem_used > 0.33 * total_mem_reserved:
         USED_MEM_COL = "yellow"
     else:
         USED_MEM_COL = "lred"
 
-    mem_eff = (mem_used * 100)  / mem_reserved if mem_reserved else 0.0
+    mem_eff = (total_mem_used * 100)  / total_mem_reserved if total_mem_reserved else 0.0
     MEM_EFFICIENCY = color(USED_MEM_COL, "%s%%" %( ("%d" %mem_eff).rjust(2)))
-    HOST_INFO = "%s CPU, %s" %(color("brown", str(host2avail_slots[x])), color("lblue", bytes2mem(mem_avail)))
-   
-    fields = [x.ljust(8),
+    entries.append([""]*6)
+    fields = ["TOTALS".ljust(8),
               HOST_INFO,
-              "%s / %s" %(color("cyan", str(host2slots.get(x, 0))), host2avail_slots[x]),
-              "%s / %s (%s)" % (color("cyan", bytes2mem(mem_used)), bytes2mem(mem_reserved), MEM_EFFICIENCY),
-              color("red", "#" * mem_char_used) +
-              color("white", "~" * mem_char_unused) +
-              color("white", " " * mem_char_free), 
-              color("red", "#"*host2slots.get(x, 0)) +
-              ("." * (host2avail_slots[x] - host2slots.get(x, 0)))
-          ]
+                  "%s / %s" %(color("cyan", str(total_cpu_used)), total_cpu),
+                  "%s / %s (%s)" % (color("cyan", bytes2mem(total_mem_used)), bytes2mem(total_mem_reserved), MEM_EFFICIENCY),
+                  "",
+                  ""
+              ]
     entries.append(fields)
 
-# Create totals entry
-HOST_INFO = "%s CPU, %s" %(color("brown", str(total_cpu)), color("lblue", bytes2mem(int(total_mem))))
-if total_mem_used > 0.66 * total_mem_reserved:
-    USED_MEM_COL = "lgreen"
-elif total_mem_used > 0.33 * total_mem_reserved:
-    USED_MEM_COL = "yellow"
-else:
-    USED_MEM_COL = "lred"
-
-mem_eff = (total_mem_used * 100)  / total_mem_reserved if total_mem_reserved else 0.0
-MEM_EFFICIENCY = color(USED_MEM_COL, "%s%%" %( ("%d" %mem_eff).rjust(2)))
-entries.append([""]*6)
-fields = ["TOTALS".ljust(8),
-          HOST_INFO,
-              "%s / %s" %(color("cyan", str(total_cpu_used)), total_cpu),
-              "%s / %s (%s)" % (color("cyan", bytes2mem(total_mem_used)), bytes2mem(total_mem_reserved), MEM_EFFICIENCY),
-              "",
-              ""
-          ]
-entries.append(fields)
-    
-# add a description (with colors) before the output with information about
-# what is being printed to stdout
-if options.user != '\'*\'':
-    description =  "\n" + bcolors.HEADER + "User " + options.user + bcolors.ENDC + "\n"
-    if options.queue:
-        desk =  "\n" + bcolors.HEADER + "User " + options.user +\
-        " in queue " + options.queue + bcolors.ENDC + "\n"
-else:
-    if options.queue:
-        description =  "\n" + bcolors.HEADER + "Jobs in queue " + options.queue +\
-        bcolors.ENDC + "\n"
-    else: description =  "\n" + bcolors.HEADER + "CLUSTER STATS " + bcolors.ENDC + "\n"
-
-print description    
-header = "hostname", "host info", "CPU", "Mem: used/reserved", "Mem usage", "CPU usage" 
-#header = bcolors.HEADER + "Host", "S.used", "S.tot.", "M.res.", "M.used","M.tot.", "Mem graph", "Slots graph" + bcolors.ENDC
-
-
-print_as_table(entries, header=header)
-
-user2prio = defaultdict(list)
-
-BASE_PRIO = -512
-for jid, info in job2info.iteritems():
-    
-    prio = int(re.search("priority:([^\n]+)", info).groups()[0])
-    prio =  prio - BASE_PRIO
-    if prio > 0:
-        prio = color("lred", "%sx" %prio)
-    elif prio < 0:
-        prio = color("white", "%sx" %prio)
+    # add a description (with colors) before the output with information about
+    # what is being printed to stdout
+    if options.user != '\'*\'':
+        description =  "\n" + color("white", "User " + options.user + "\n")
+        if options.queue:
+            desk =  "\n" + color("white", "User " + options.user +\
+                                     " in queue " + options.queue + "\n")
     else:
-        prio = color("lgreen", "0x")
+        if options.queue:
+            description =  "\n" + color("white", "Jobs in queue " + options.queue)
+        else:
+            description =  "\n" + color("white", "CLUSTER STATS\n")
 
-    owner = re.search("owner:([^\n]+)", info).groups()[0].strip()
-    user2prio[owner].append(prio)
+    print description    
+    header = "hostname", "host info", "CPU", "Mem: used/reserved", "Mem usage", "CPU usage" 
+
+    print_as_table(entries, header=header)
+
+
+    # update cpu usage per array job
+    jid2Ucpu = defaultdict(int)
+    for jid, taskid, queue, hostname in tasks:
+        jid2Ucpu[jid] += job2info[jid]["smp"]
+       
+    # sort jobs by number of cpus in use
+    sorted_jobs = sorted(jid2Ucpu.keys(), lambda x,y: cmp(jid2Ucpu[x], jid2Ucpu[y]), reverse=True)
     
-print
-for user, priorities in user2prio.iteritems():
-    print "User", color("green",user.ljust(12)), "has", color("yellow", " %d" %len(priorities)), "job(s) with priorities: ", color("yellow", ', '.join(set(priorities)))
-print
-print color("white", "* project priority is expressed as a fold factor")
-print color("white", "   i.e. 10x = 10 times more priority than the standard level")
-print
-print color("red", "#"),": used"
-print color("white", "~"),": reserved but not used"    
-print ". : not used"
-print
-print "User 'qres -h' for more info"
+    # Print info by user
+    user2jid = defaultdict(list)
+    jid2prio = {}
+    
+    # update per user counter and priorities
+    for jid in sorted_jobs:
+        info = job2info[jid]
+        prio = info["prio"] - DEFAULT_JOB_PRIO
+        user = info["user"]
+        if prio > 0:
+            prio_label = color("lred", "%sx" %prio)
+        elif prio < 0:
+            prio_label = color("white", "%sx" %prio)
+        else:
+            prio_label = color("lgreen", "0x")
+
+        jid2prio[jid] = prio_label
+        user2jid[user].append(jid)
+        
+    print
+    for user, jobs in user2jid.iteritems():
+        print "User", color("green",user.ljust(12)), "has",\
+            color("yellow", str(len(jobs))), "running job(s) and is using", \
+            color("yellow", str(sum([jid2Ucpu[j] for j in jobs])) ), "CPUs:", \
+            ', '.join(["%d=%s" %(jid2Ucpu[jid], jid2prio[jid]) for jid in jobs])
+              
+        
+    print color("white", "\n\nNN=(PPx) = NNN tasks/CPUs with priority PP" )
+    print color("white", "Note that priority is expressed as a fold factor:")
+    print color("white", "  i.e. 10x = 10 times more priority than the standard level")
+    print
+    print color("red", "#"),": used"
+    print color("white", "~"),": reserved but not used"    
+    print ". : not used"
+    print
+    print "User 'qres -h' for more info"
