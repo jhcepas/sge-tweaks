@@ -501,7 +501,7 @@ for jid, info in job2info.iteritems():
     
 print
 for user, priorities in user2prio.iteritems():
-    print "User", color("green",user.ljust(12)), "has", color("yellow", " %d" %len(priorities)), "project(s) with priorities: ", color("yellow", ', '.join(set(priorities)))
+    print "User", color("green",user.ljust(12)), "has", color("yellow", " %d" %len(priorities)), "job(s) with priorities: ", color("yellow", ', '.join(set(priorities)))
 print
 print color("white", "* project priority is expressed as a fold factor")
 print color("white", "   i.e. 10x = 10 times more priority than the standard level")
