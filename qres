@@ -318,10 +318,17 @@ for h in hosts:
     hinfo = commands.getoutput("qconf -se %s" %h)
     mem_match = re.search(H_VMEMMATCH_m, hinfo)
     slots_match = re.search("[\s,]?slots=(\d+)", hinfo, re.MULTILINE)
+   
     if mem_match:
         host2avail_mem[h] = mem2bytes(mem_match.groups()[0])
-    if mem_match:
+    else:
+        print 'h_vmem should be defined as consumable resource in ' + h
+        sys.exit()
+    if slots_match:
         host2avail_slots[h] = int(slots_match.groups()[0])
+    else:
+        print 'slot should be defined as consumable resource in ' + h
+        sys.exit()
 
 
 ## Load info about running jobs
@@ -381,7 +388,6 @@ for x in running_jobs[2:]:
             host2vmem[ho] += job2vmem[jid]
         except KeyError:
             print 'h_vmem reservation not found in job with uid %s' % sys.exc_value
-
 
 ## show collected info
         
