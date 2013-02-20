@@ -56,10 +56,12 @@ class bcolors:
 mK = 1024
 mM = 1024*1024
 mG = 1024*1024*1024
+mT = 1024*1024*1024*1024
 
 mk = 1000
 mm = 1000*1000
 mg = 1000*1000*1000
+mt = 1000*1000*1000*1000
 
 DAY = 3600 * 24
 HOUR = 3600
@@ -210,13 +212,16 @@ def mem2bytes(mem):
     return bytes
 
 def bytes2mem(bytes):
-    if bytes > mG:
+    if bytes > mt:
+        v = "%0.1f" %(float(bytes)/mt)
+        v = v.rstrip("0").rstrip(".") +"T"
+    elif bytes > mg:
         v = "%0.1f" %(float(bytes)/mg)
         v = v.rstrip("0").rstrip(".") +"G"
-    elif bytes > mM:
+    elif bytes > mm:
         v = "%0.1f" %(float(bytes)/mm)
         v = v.rstrip("0").rstrip(".") +"M"
-    elif bytes > mK:
+    elif bytes > mk:
         v = "%0.1f" %(float(bytes)/mk)
         v = v.rstrip("0").rstrip(".") +"K"
     else:
