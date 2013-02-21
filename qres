@@ -295,6 +295,7 @@ def parse_running_jobs(jobs, valid_hosts):
         tasks.append([jid, task, queue, host])
         if jid not in job2info:
             job2info[jid]["raw"] = getoutput("qstat -j %s" %jid)
+            job2info[jid]["smp"] = 1 # Assumes 1 cpu if no other SMP info is available
             for line in job2info[jid]["raw"].split("\n"):
                 usage_match = re.search(USAGE_MATCH, line)
                 if usage_match:
@@ -326,8 +327,6 @@ def parse_running_jobs(jobs, valid_hosts):
                     smp_match = re.search("smp range:([^\n]+)", line)                    
                     if smp_match:
                         job2info[jid]["smp"] = int(smp_match.groups()[0])
-                    else:
-                        job2info[jid]["smp"] = 1
                         
                 elif line.startswith("priority:"):
                     job2info[jid]["prio"] = int(re.search("priority:([^\n]+)", line).groups()[0])
@@ -573,7 +572,7 @@ if __name__ == "__main__":
             ', '.join(["%d=%s" %(jid2Ucpu[jid], jid2prio[jid]) for jid in jobs])
               
         
-    print color("white", "\n\nNN=(PPx) = NNN tasks/CPUs with priority PP" )
+    print color("white", "\n\nNN=(PPx): NNN cpu-tasks running with priority PP" )
     print color("white", "Note that priority is expressed as a fold factor:")
     print color("white", "  i.e. 10x = 10 times more priority than the standard level")
     print
