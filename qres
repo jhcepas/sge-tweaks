@@ -314,18 +314,25 @@ def parse_running_jobs(jobs, valid_hosts):
                 elif line.startswith("hard resource_list:"):
                     rt_match = re.search("h_rt=(\d+)", line)
                     mem_match = re.search(H_VMEMMATCH, line)
-                    smp_match = re.search("smp range:(.+)", line)
+
                     if rt_match:
                         job2info[jid]["h_rt"] = int(rt_match.groups()[0])
                     if mem_match:
                         job2info[jid]["r.mem"] = mem2bytes(mem_match.groups()[0])
                     else:
                         job2info[jid]["r.mem"] = DEFAULT_RESERVED_MEM
+
+                elif line.startswith("parallel environment:"):
+                    smp_match = re.search("smp range:([^\n]+)", line)                    
                     if smp_match:
                         job2info[jid]["smp"] = int(smp_match.groups()[0])
                     else:
                         job2info[jid]["smp"] = 1
+                        
+                elif line.startswith("priority:"):
+                    job2info[jid]["prio"] = int(re.search("priority:([^\n]+)", line).groups()[0])
 
+                        
                 elif line.startswith("priority:"):
                     job2info[jid]["prio"] = int(re.search("priority:([^\n]+)", line).groups()[0])
                     
