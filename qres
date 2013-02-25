@@ -272,6 +272,41 @@ def bytes2mem(bytes):
         v = str(bytes)
     return  v
 
+def get_host_info():
+    host2load = {}
+    for line in getoutput("qhost").split("\n")[3:]:
+        #HOSTNAME                ARCH         NCPU  LOAD  MEMTOT  MEMUSE  SWAPTO  SWAPUS
+        hostname, arch, slots, load, mem, mem_used, swap, swap_used = line.split()
+        hostname = hostname.split(".")[0]
+        try:
+            host2load[hostname] = float(load)
+        except ValueError:
+            host2load[hostname] = -1
+            
+    return host2load 
+
+def parse_reservations(reservations, valid_hosts):
+    valid_hosts = set(valid_hosts)
+    queue2ARcpu = defaultdict(int)
+    host2ARcpu = defaultdict(int)
+    for res in reservations[2:]:
+        # ['ar-id', 'name', 'owner', 'state', 'start', 'at', 'end', 'at', 'duration']
+        # ['277', 'NADA', 'jhuerta', 'r', '02/25/2013', '18:07:00', '02/26/2013', '19:07:00', '25:00:00']
+        try:
+            rid, name, user, state, start_day, start_tm, end_day, end_tm, duration = res.split()
+        except ValueError:
+            rid, user, state, start_day, start_tm, end_day, end_tm, duration = res.split()
+        
+        if state == "r":
+            for line in getoutput("qrstat -ar %s" %rid).split("\n"):
+                if line.startswith("granted_slots_list"):
+                    for queue, host, slots in  re.findall("[\s,]([^@]+)@([^=]+)=(\d+)", line):
+                        slots = int(slots)
+                        host = host.strip().split(".")[0]
+                        if host in valid_hosts: 
+                            queue2ARcpu[queue.strip()] += slots
+                            host2ARcpu[host] += slots
+    return host2ARcpu
 
 def parse_running_jobs(jobs, valid_hosts):
     valid_hosts = set(valid_hosts)
@@ -369,6 +404,7 @@ if __name__ == "__main__":
     # config
     (USERS, QUEUES, HOSTNAMES, DEFAULT_RESERVED_MEM, DEFAULT_SLOTS,
      PER_SLOT_MEM, host2Amem, host2Acpu) = runcheck()
+    host2load = get_host_info()
     
     # Parse options
     parser = argparse.ArgumentParser(description='Show your cluster usage')
@@ -434,16 +470,21 @@ if __name__ == "__main__":
     #        hosts.sort()
 
     ## Detect running jobs
+    
     if options.queue:
         running_jobs = map(strip, commands.getoutput('qstat -s r -u ' +\
             options.user + ' -q ' + options.queue).split("\n"))
+
+
     else:
         running_jobs = map(strip, commands.getoutput('qstat -s r -u ' +\
                 options.user).split("\n"))
-
+        
+    reservations = map(strip, commands.getoutput('qrstat -u %s' %options.user).split("\n"))
+        
     tasks, job2info = parse_running_jobs(running_jobs, hosts)
     host2Umem, host2Rmem, host2Ucpu = sort_resources_by_host(tasks, job2info)
-
+    host2ARcpu = parse_reservations(reservations, hosts)
         
     ## show collected info
 
@@ -483,8 +524,9 @@ if __name__ == "__main__":
 
         mem_eff = (mem_used * 100)  / mem_reserved if mem_reserved else 0.0
         MEM_EFFICIENCY = color(USED_MEM_COL, "%s%%" %( ("%d" %mem_eff).rjust(2)))
-        HOST_INFO = "%s CPU, %s" %(color("brown", str(host2Acpu[x])), color("lblue", bytes2mem(mem_avail)))
+        HOST_INFO = "%0.1f/%s (%s)" %(round(host2load.get(x, -1),1), color("brown", str(host2Acpu[x])), color("lblue", bytes2mem(mem_avail)))
 
+        empty_slots = host2Acpu[x] - host2Ucpu.get(x, 0) - host2ARcpu.get(x, 0)
         fields = [x.ljust(8),
                   HOST_INFO,
                   "%s / %s" %(color("cyan", str(host2Ucpu.get(x, 0))), host2Acpu[x]),
@@ -493,7 +535,8 @@ if __name__ == "__main__":
                   color("white", "~" * mem_char_unused) +
                   color("white", " " * mem_char_free), 
                   color("red", "#"*host2Ucpu.get(x, 0)) +
-                  ("." * (host2Acpu[x] - host2Ucpu.get(x, 0)))
+                  color("blue", "#"*host2ARcpu.get(x, 0)) +
+                  ("." * empty_slots)
               ]
         entries.append(fields)
 
@@ -572,11 +615,12 @@ if __name__ == "__main__":
             ', '.join(["%d=%s" %(jid2Ucpu[jid], jid2prio[jid]) for jid in jobs])
               
         
-    print color("white", "\n\nNN=(PPx): NNN cpu-tasks running with priority PP" )
+    print color("white", "\n\nNN=PPx: NNN cpu-tasks running with priority PP" )
     print color("white", "Note that priority is expressed as a fold factor:")
     print color("white", "  i.e. 10x = 10 times more priority than the standard level")
     print
     print color("red", "#"),": used"
+    print color("blue", "#"),": reserved"
     print color("white", "~"),": reserved but not used"    
     print ". : not used"
     print
