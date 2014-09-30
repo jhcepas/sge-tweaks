@@ -1,4 +1,5 @@
-#!/usr/bin/env python
+#/usr/bin/env python 
+
 import commands
 from commands import getoutput
 import sys
@@ -7,6 +8,9 @@ import argparse
 from string import strip
 from collections import defaultdict 
 import re
+
+__LICENSE__ = "GPL v3"
+__AUTHOR__ = "Jaime Huerta-Cepas"
 
 DEFAULT_JOB_PRIO = -512
 MEM_STRING_LEN = 15
@@ -67,7 +71,11 @@ def runcheck():
         hinfo = commands.getoutput("qconf -se %s" %h)
         mem_match = re.search(H_VMEMMATCH_m, hinfo)
         slots_match = re.search("[\s,]?slots=(\d+)", hinfo, re.MULTILINE)
+        if not slots_match:
+            slots_match = re.search("[\s,]?processors\s*(\d+)", hinfo, re.MULTILINE)
 
+
+        
         if mem_match:
             host2avail_mem[h] = mem2bytes(mem_match.groups()[0])
         else:
@@ -331,6 +339,9 @@ def parse_running_jobs(jobs, valid_hosts):
         if jid not in job2info:
             job2info[jid]["raw"] = getoutput("qstat -j %s" %jid)
             job2info[jid]["smp"] = 1 # Assumes 1 cpu if no other SMP info is available
+            job2info[jid]["r.mem"] = DEFAULT_RESERVED_MEM
+            job2info[jid]["prio"] = DEFAULT_JOB_PRIO
+            
             for line in job2info[jid]["raw"].split("\n"):
                 usage_match = re.search(USAGE_MATCH, line)
                 if usage_match:
@@ -365,10 +376,6 @@ def parse_running_jobs(jobs, valid_hosts):
                         
                 elif line.startswith("priority:"):
                     job2info[jid]["prio"] = int(re.search("priority:([^\n]+)", line).groups()[0])
-
-                        
-                elif line.startswith("priority:"):
-                    job2info[jid]["prio"] = int(re.search("priority:([^\n]+)", line).groups()[0])
                     
                 elif line.startswith("owner:"):
                     job2info[jid]["user"] = re.search("owner:([^\n]+)", line).groups()[0].strip()
@@ -386,6 +393,7 @@ def sort_resources_by_host(tasks, job2info):
     for jid, taskid, queue, host in tasks:
         tinfo = job2info[jid][taskid]
         jinfo = job2info[jid]
+        
         if PER_SLOT_MEM:
             rmem = jinfo["r.mem"] * jinfo["smp"]
         else:
